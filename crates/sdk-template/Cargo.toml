@@ -1,0 +1,19 @@
+[package]
+name = "sdk-template"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+khafi-common = { path = "../common" }
+methods = { path = "../methods" }
+risc0-zkvm.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+
+# HTTP client for fetching Zcash state
+reqwest = { version = "0.11", features = ["json"] }
+tokio.workspace = true
+hex.workspace = true

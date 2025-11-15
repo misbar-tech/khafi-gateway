@@ -1,0 +1,19 @@
+[package]
+name = "zk-verification-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+khafi-common = { path = "../common" }
+tonic.workspace = true
+prost.workspace = true
+tokio.workspace = true
+risc0-zkvm.workspace = true
+redis.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "guest"
+version = "0.1.0"
+edition = "2021"
+
+# This must be a separate workspace to avoid conflicts with the main workspace
+[workspace]
+
+[dependencies]
+risc0-zkvm = { version = "3.0.3", default-features = false, features = ['std'] }
+khafi-common = { path = "../../common" }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
