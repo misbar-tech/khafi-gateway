@@ -3,4 +3,6 @@
 //! gRPC service that verifies RISC Zero proofs and checks nullifiers.
 //! Implements Envoy's ExtAuth interface.
 
-// Placeholder - will be implemented in Phase 2
+pub mod config;
+pub mod nullifier;
+pub mod service;

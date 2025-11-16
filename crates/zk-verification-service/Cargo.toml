@@ -6,7 +6,9 @@ license.workspace = true
 
 [dependencies]
 khafi-common = { path = "../common" }
+methods = { path = "../methods" }
 tonic.workspace = true
+tonic-prost.workspace = true
 prost.workspace = true
 tokio.workspace = true
 risc0-zkvm.workspace = true
@@ -14,6 +16,9 @@ redis.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+hex.workspace = true
+serde.workspace = true
+bincode.workspace = true
 
 [build-dependencies]
-tonic-build.workspace = true
+tonic-prost-build.workspace = true

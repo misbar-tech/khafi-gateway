@@ -24,6 +24,8 @@ risc0-build = "3.0.3"
 tonic = "0.14.2"
 prost = "0.14.1"
 tonic-build = "0.14.2"
+tonic-prost-build = "0.14.2"
+tonic-prost = "0.14.2"
 
 # Zcash
 zcash_primitives = "0.26.1"

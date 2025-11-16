@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package envoy.service.auth.v3;
+
+// External Authorization service
+// This implements the Envoy ExtAuth protocol for ZK proof verification
+service Authorization {
+  // Check performs authorization check based on the attributes associated
+  // with the incoming request, and returns status `OK` or `PERMISSION_DENIED`.
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+// Request for authorization check
+message CheckRequest {
+  // HTTP request headers
+  // We extract:
+  // - x-zk-receipt: hex-encoded Receipt bytes
+  // - x-zk-nullifier: hex-encoded Nullifier bytes
+  map<string, string> headers = 1;
+
+  // Optional request body (not currently used)
+  string body = 2;
+
+  // Request path (for logging/debugging)
+  string path = 3;
+}
+
+// Response from authorization check
+message CheckResponse {
+  // Status code
+  StatusCode status = 1;
+
+  // Human-readable message (for debugging/logging)
+  string message = 2;
+
+  // Additional metadata (optional)
+  map<string, string> metadata = 3;
+}
+
+// Status codes for authorization response
+enum StatusCode {
+  // Request is authorized - allow through
+  OK = 0;
+
+  // Request is not authenticated (missing or invalid credentials)
+  UNAUTHENTICATED = 1;
+
+  // Request is authenticated but not authorized (e.g., nullifier replay)
+  PERMISSION_DENIED = 2;
+
+  // Service is unavailable (e.g., Redis down)
+  UNAVAILABLE = 3;
+
+  // Invalid request format
+  INVALID_ARGUMENT = 4;
+}

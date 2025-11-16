@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zk-verification-service:
+    build:
+      context: .
+      dockerfile: crates/zk-verification-service/Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - RUST_LOG=info
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  zcash-backend:
+    build:
+      context: .
+      dockerfile: crates/zcash-backend/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - RUST_LOG=info
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  envoy:
+    build:
+      context: ./envoy
+      dockerfile: Dockerfile.envoy
+    ports:
+      - "8080:8080"
+      - "9901:9901" # Admin interface
+    depends_on:
+      - zk-verification-service
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml
+
+volumes:
+  redis-data:
