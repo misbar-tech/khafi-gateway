@@ -1,0 +1,63 @@
+{
+  "use_case": "manifest_compliance",
+  "description": "Validates shipping manifests for compliance with sanctions and regulations",
+  "version": "1.0",
+  "private_inputs": {
+    "manifest": {
+      "type": "object",
+      "fields": {
+        "origin_country": "string",
+        "destination_country": "string",
+        "contents": "array[string]",
+        "total_weight_kg": "u32",
+        "shipper_id": "string",
+        "cargo_value_usd": "u32"
+      }
+    }
+  },
+  "public_params": {
+    "sanctioned_countries": "array[string]",
+    "prohibited_items": "array[string]",
+    "max_weight_kg": "u32",
+    "max_value_usd": "u32"
+  },
+  "validation_rules": [
+    {
+      "type": "blacklist_check",
+      "description": "Ensure destination is not sanctioned",
+      "field": "destination_country",
+      "blacklist_param": "sanctioned_countries"
+    },
+    {
+      "type": "blacklist_check",
+      "description": "Ensure origin is not sanctioned",
+      "field": "origin_country",
+      "blacklist_param": "sanctioned_countries"
+    },
+    {
+      "type": "array_intersection_check",
+      "description": "Ensure no prohibited items in cargo",
+      "field": "contents",
+      "prohibited_param": "prohibited_items",
+      "must_be_empty": true
+    },
+    {
+      "type": "range_check",
+      "description": "Ensure weight is within limits",
+      "field": "total_weight_kg",
+      "min": 1,
+      "max_param": "max_weight_kg"
+    },
+    {
+      "type": "range_check",
+      "description": "Ensure cargo value is within limits",
+      "field": "cargo_value_usd",
+      "min": 0,
+      "max_param": "max_value_usd"
+    }
+  ],
+  "outputs": {
+    "compliance_result": "bool",
+    "manifest_hash": "bytes"
+  }
+}

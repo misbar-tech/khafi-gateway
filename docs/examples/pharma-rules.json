@@ -1,0 +1,54 @@
+{
+  "use_case": "prescription_validation",
+  "description": "Validates electronic prescriptions for controlled substances",
+  "version": "1.0",
+  "private_inputs": {
+    "prescription": {
+      "type": "object",
+      "fields": {
+        "drug_name": "string",
+        "quantity": "u32",
+        "patient_dob": "string",
+        "prescriber_id": "string",
+        "prescriber_signature": "bytes"
+      }
+    }
+  },
+  "public_params": {
+    "max_quantity": "u32",
+    "min_age": "u32",
+    "prescriber_pubkey": "bytes"
+  },
+  "validation_rules": [
+    {
+      "type": "signature_check",
+      "description": "Verify prescriber's digital signature",
+      "field": "prescriber_signature",
+      "algorithm": "ed25519",
+      "public_key_param": "prescriber_pubkey",
+      "message_fields": ["drug_name", "quantity", "patient_dob", "prescriber_id"]
+    },
+    {
+      "type": "range_check",
+      "description": "Ensure quantity is within allowed limits",
+      "field": "quantity",
+      "min": 1,
+      "max_param": "max_quantity"
+    },
+    {
+      "type": "age_verification",
+      "description": "Verify patient is old enough for controlled substance",
+      "dob_field": "patient_dob",
+      "min_age_param": "min_age"
+    },
+    {
+      "type": "custom",
+      "description": "Check prescriber is registered",
+      "code": "prescriber_registry.contains(prescription.prescriber_id)"
+    }
+  ],
+  "outputs": {
+    "compliance_result": "bool",
+    "prescription_hash": "bytes"
+  }
+}

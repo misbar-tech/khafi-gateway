@@ -1,0 +1,29 @@
+{
+  "use_case": "age_verification",
+  "description": "Simple age verification - proves user is over minimum age without revealing exact age",
+  "version": "1.0",
+  "private_inputs": {
+    "user_data": {
+      "type": "object",
+      "fields": {
+        "date_of_birth": "string",
+        "user_id": "string"
+      }
+    }
+  },
+  "public_params": {
+    "min_age": "u32"
+  },
+  "validation_rules": [
+    {
+      "type": "age_verification",
+      "description": "Verify user meets minimum age requirement",
+      "dob_field": "date_of_birth",
+      "min_age_param": "min_age"
+    }
+  ],
+  "outputs": {
+    "compliance_result": "bool",
+    "user_hash": "bytes"
+  }
+}
