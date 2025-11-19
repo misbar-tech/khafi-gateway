@@ -37,19 +37,90 @@ khafi-gateway/
 │   └── test-e2e.sh              # End-to-end testing
 │
 └── docs/
-    ├── product-description.md   # Technical specification (updated)
-    ├── implementation-plan.md   # (this document)
-    ├── risc0-setup-complete.md  # RISC Zero integration documentation
-    ├── host-vs-guest-code.md    # RISC Zero architecture explanation
-    ├── architecture/            # ADRs and design docs
-    ├── api/                     # gRPC/REST API documentation
-    ├── guides/                  # Developer & deployment guides
+    ├── product-description.md         # Technical specification (updated)
+    ├── implementation-plan.md         # (this document)
+    ├── risc0-setup-complete.md        # RISC Zero integration documentation
+    ├── host-vs-guest-code.md          # RISC Zero architecture explanation
+    ├── zcash-integration.md           # Zcash payment verification guide
+    ├── zcash-verification-flow.md     # Zcash technical deep dive
+    ├── architecture/                  # ADRs and design docs
+    ├── api/                           # gRPC/REST API documentation
+    ├── guides/                        # Developer & deployment guides
     └── examples/
-        ├── pharma-rules.json    # Example DSL for prescription validation
-        └── shipping-rules.json  # Example DSL for manifest compliance
+        ├── pharma-rules.json          # Example DSL for prescription validation
+        ├── shipping-rules.json        # Example DSL for manifest compliance
+        └── age-verification-simple.json  # Example DSL for age verification
 ```
 
 ## 📋 Implementation Phases
+
+### 🔒 Zcash Integration Architecture
+
+**Overview:** Zcash shielded payment verification is the core privacy-preserving mechanism of Khafi Gateway. The verification happens inside the RISC Zero zkVM guest program.
+
+**Key Components:**
+
+1. **Orchard Protocol** - Latest Zcash shielded pool (no trusted setup)
+2. **Notes** - Encrypted value representations (recipient, value, randomness)
+3. **Nullifiers** - Unique identifiers preventing double-spending
+4. **Commitment Tree** - Global Merkle tree of all note commitments
+5. **Cryptographic Operations:**
+   - **Sinsemilla Hash** - For Merkle tree operations (Pallas curve)
+   - **Poseidon Hash** - For nullifier derivation (arithmetic hash)
+
+**Verification Flow in Guest Program:**
+
+```rust
+// In methods/guest/src/main.rs
+
+fn verify_zcash_payment(inputs: &ZcashInputs) -> Nullifier {
+    // 1. Deserialize Orchard note
+    let note = deserialize_orchard_note(&inputs.note)?;
+
+    // 2. Compute note commitment using Sinsemilla
+    let commitment = compute_note_commitment(&note)?;
+
+    // 3. Verify Merkle proof against public anchor
+    let merkle_path = deserialize_merkle_path(&inputs.merkle_path)?;
+    verify_merkle_proof(commitment, &merkle_path, inputs.merkle_root)?;
+
+    // 4. Derive nullifier deriving key from spending key
+    let nk = derive_nullifier_key(&inputs.spending_key)?;
+
+    // 5. Compute nullifier using Poseidon hash
+    let nullifier = compute_nullifier(nk, &note, commitment)?;
+
+    nullifier
+}
+```
+
+**Current Implementation Status:**
+
+- ✅ Architecture designed
+- ✅ Data structures defined (ZcashInputs in common crate)
+- ✅ Guest program structure in place
+- ⏳ Placeholder verification logic (needs Orchard implementation)
+- ⏳ Cryptographic operations pending (Sinsemilla, Poseidon)
+
+**Implementation Roadmap Options:**
+
+See `docs/zcash-integration.md` for detailed roadmap with three approaches:
+1. **Full Implementation** - Complete Orchard verification in zkVM
+2. **Simplified Verification** - Lightweight commitment/nullifier checks
+3. **Hybrid Approach** (RECOMMENDED) - Start simple, add complexity incrementally
+
+**Performance Estimates:**
+
+- Zcash verification in zkVM: ~175ms
+- Merkle path verification (32 levels): ~160ms
+- Nullifier derivation: ~10ms
+
+**Documentation:**
+
+- **`docs/zcash-integration.md`** - Complete integration guide (400+ lines)
+- **`docs/zcash-verification-flow.md`** - Technical deep dive (350+ lines)
+
+---
 
 ### **Phase 1: Foundation + RISC Zero Integration** ✅
 **Status:** COMPLETED (Week 1-2)
@@ -567,15 +638,18 @@ After completing these commands, verify:
 
 ---
 
-### **Phase 2: ZK Verification Service** ⏳
-**Status:** IN PROGRESS
+### **Phase 2: ZK Verification Service** ✅
+**Status:** COMPLETED (Week 2-3)
 **Goal:** Core proof verification with gRPC interface
 
-**Current State:**
+**Completed:**
 - ✅ Crate structure created
-- ⏳ gRPC service implementation pending
-- ⏳ RISC Zero proof verification pending
-- ⏳ Multi-tenant Image ID registry pending
+- ✅ gRPC service implementation with Envoy ExtAuth protocol
+- ✅ RISC Zero proof verification using Receipt::verify_and_decode()
+- ✅ Redis-based nullifier checker with atomic operations
+- ✅ Proper error handling and HTTP status codes
+- ✅ Dockerfile and containerization
+- ✅ All tests passing (13 total across workspace)
 
 #### Step-by-Step Commands:
 
@@ -919,11 +993,91 @@ After completing these commands, verify:
 - ✅ Duplicate nullifier requests are rejected
 - ✅ Tests pass with `cargo test`
 
-**👉 Run these commands, then check in with me for Phase 3!**
+**✅ Phase 2 Complete! ZK Verification Service fully functional with gRPC ExtAuth, RISC Zero verification, and nullifier replay protection.**
 
 ---
 
-### **Phase 3: Zcash Backend Abstraction** 📅
+### **Phase 3: Logic Compiler (SaaS Differentiator)** ⏳
+**Status:** IN PROGRESS (Week 3-4)
+**Goal:** Transform JSON DSL business rules into custom RISC Zero guest programs
+
+**Current State:**
+- ✅ DSL schema with 6 validation rule types
+- ✅ JSON parser with comprehensive validation
+- ✅ 3 example DSL files created
+- ✅ Integration tests (9 tests passing)
+- ⏳ Guest code generator (NEXT PRIORITY)
+- ⏳ Compilation pipeline
+- ⏳ SDK customization
+
+**DSL Validation Rules Implemented:**
+1. **signature_check** - Verify digital signatures (ed25519, ecdsa, rsa)
+2. **range_check** - Validate numeric ranges with min/max
+3. **age_verification** - Check minimum age from date of birth
+4. **blacklist_check** - Ensure values not in prohibited list
+5. **array_intersection_check** - Check for prohibited array elements
+6. **custom** - Arbitrary Rust code for complex logic
+
+#### Example DSL Files:
+
+**1. Pharmaceutical Prescription Validation** (`docs/examples/pharma-rules.json`):
+```json
+{
+  "use_case": "prescription_validation",
+  "validation_rules": [
+    {
+      "type": "signature_check",
+      "field": "prescriber_signature",
+      "algorithm": "ed25519",
+      "public_key_param": "prescriber_public_key",
+      "message_fields": ["patient_id", "medication", "dosage", "timestamp"]
+    },
+    {
+      "type": "range_check",
+      "field": "quantity",
+      "min": 1,
+      "max": 90
+    }
+  ]
+}
+```
+
+**2. International Shipping Compliance** (`docs/examples/shipping-rules.json`):
+- Blacklist check for sanctioned countries
+- Prohibited items array intersection
+- Weight limits validation
+
+**3. Age Verification** (`docs/examples/age-verification-simple.json`):
+- Minimum age check from date of birth
+
+#### Next Steps:
+
+**Guest Code Generator** (PRIORITY):
+- Parse DSL and generate Rust code for guest program
+- Map validation rules to RISC Zero compatible operations
+- Generate type-safe input/output structures
+- Compile guest program to ELF binary
+
+**Compilation Pipeline**:
+- Integrate with RISC Zero build system
+- Generate Image ID for each custom guest program
+- Package compiled artifacts
+
+**SDK Customization**:
+- Generate custom SDK for each use case
+- Include generated guest ELF and Image ID
+- Provide type-safe API for inputs
+
+**Testing**:
+- End-to-end test with pharma example
+- Verify generated code compiles
+- Test proof generation with custom logic
+
+**✅ Phase 3 will enable customers to define custom business logic via JSON DSL!**
+
+---
+
+### **Phase 4: Zcash Backend Abstraction** 📅
 **Status:** PLANNED
 **Goal:** Zcash state management for commitment trees
 
@@ -1226,11 +1380,11 @@ After completing these commands, verify:
 - ✅ Service handles Redis cache correctly
 - ✅ Integration tests pass
 
-**👉 Run these commands, then check in with me for Phase 4!**
+**👉 Run these commands, then check in with me for Phase 5!**
 
 ---
 
-### **Phase 4: Client SDK** 📅
+### **Phase 5: Client SDK** 📅
 **Status:** PLANNED
 **Goal:** Proof generation library for application developers
 
@@ -1557,11 +1711,11 @@ After completing these commands, verify:
 - ✅ SDK documentation is created
 - ✅ Basic proof generation logic is in place
 
-**👉 Run these commands, then check in with me for Phase 5!**
+**👉 Run these commands, then check in with me for Phase 6!**
 
 ---
 
-### **Phase 5: Envoy Integration** 📅
+### **Phase 6: Envoy Integration** 📅
 **Status:** PLANNED
 **Goal:** Complete gateway with ExtAuth filter
 
@@ -1922,11 +2076,11 @@ After completing these commands, verify:
 - ✅ Missing headers return 401/403
 - ✅ E2E test script passes all tests
 
-**👉 Run these commands, then check in with me for Phase 6 (Production Readiness)!**
+**👉 Run these commands, then check in with me for Phase 7 (Production Readiness)!**
 
 ---
 
-### **Phase 6: Production Readiness** 📅
+### **Phase 7: Production Readiness** 📅
 **Status:** PLANNED
 **Goal:** Observability, security, and deployment prep
 
@@ -2189,7 +2343,7 @@ After completing these commands, verify:
 - ✅ Production checklist passes
 - ✅ Monitoring stack runs
 
-**🎉 All 6 phases complete! Your Khafi Gateway is ready for deployment!**
+**🎉 All 7 phases complete! Your Khafi Gateway is ready for deployment!**
 
 **👉 Check in with me when done or if you need help deploying!**
 
@@ -2230,13 +2384,14 @@ After completing these commands, verify:
 | Phase | Status | Progress | Target Date | Notes |
 |-------|--------|----------|-------------|-------|
 | Phase 1: Foundation + RISC Zero | ✅ Complete | 100% | Week 1-2 | Full RISC Zero integration, proof generation working, 11 tests passing |
-| Phase 2: ZK Verification | ⏳ In Progress | 10% | Week 2-3 | Crate structure done, gRPC pending |
+| Phase 2: ZK Verification | ✅ Complete | 100% | Week 2-3 | gRPC service with ExtAuth, Redis nullifier checking, RISC Zero verification |
 | Phase 3: Zcash Backend | ⏳ In Progress | 10% | Week 3-4 | Crate structure done, API pending |
 | Phase 4: Client SDK | ⏳ In Progress | 65% | Week 4-5 | SDK template complete with actual proof generation |
-| Phase 5: Envoy Integration | ⚪ Planned | 0% | Week 5-6 | - |
-| Phase 6: Production Ready | ⚪ Planned | 0% | Week 6-7 | - |
+| Phase 5: Logic Compiler | ⏳ In Progress | 40% | Week 5-6 | DSL parser complete, 3 example DSLs, code generation pending |
+| Phase 6: Envoy Integration | ⚪ Planned | 0% | Week 6-7 | - |
+| Phase 7: Production Ready | ⚪ Planned | 0% | Week 7-8 | - |
 
-**Overall Progress:** 31% (MVP)
+**Overall Progress:** 45% (MVP)
 
 ---
 
@@ -2258,6 +2413,17 @@ After completing these commands, verify:
 - [ ] Multi-tenancy support in initial design?
 
 ### Recent Changes:
+- **2025-11-19:** Created comprehensive Zcash documentation (zcash-integration.md, zcash-verification-flow.md)
+- **2025-11-19:** Documented Orchard protocol, notes, nullifiers, commitment trees
+- **2025-11-19:** Added Zcash verification flow with cryptographic operations
+- **2025-11-19:** Documented three implementation roadmap options for Zcash
+- **2025-11-19:** Added performance estimates for zkVM Zcash verification
+- **2025-11-19:** Completed Phase 2: ZK Verification Service (gRPC + ExtAuth + Redis)
+- **2025-11-19:** Fixed tonic-build API issues (migrated to tonic-prost-build)
+- **2025-11-19:** Implemented Logic Compiler DSL parser with validation
+- **2025-11-19:** Created 3 example DSL files (pharma, shipping, age verification)
+- **2025-11-19:** Added 6 validation rule types to DSL (signature, range, age, blacklist, etc.)
+- **2025-11-19:** All 22 tests passing (13 workspace + 9 logic-compiler)
 - **2025-11-16:** Completed full RISC Zero integration with methods crate
 - **2025-11-16:** Implemented actual proof generation in sdk-template/src/prover.rs
 - **2025-11-16:** Added Receipt verification methods (verify, journal, verify_and_decode)
@@ -2274,7 +2440,7 @@ After completing these commands, verify:
 
 ---
 
-*Last Updated: 2025-11-16*
+*Last Updated: 2025-11-19*
 
 ---
 
@@ -2313,15 +2479,27 @@ After completing these commands, verify:
 - extract_outputs() - journal parsing for GuestOutputs
 - Full test coverage (7/7 tests passing)
 
-#### ⏳ logic-compiler (10%)
-- Crate structure created
-- Dependencies configured
-- Implementation pending
+#### ⏳ logic-compiler (40%)
+- ✅ Crate structure created
+- ✅ Dependencies configured
+- ✅ DSL schema with 6 validation rule types
+- ✅ JSON parser with comprehensive validation
+- ✅ 3 example DSL files (pharma, shipping, age verification)
+- ✅ Integration tests (9 tests passing)
+- ⏳ Guest code generator (NEXT PRIORITY)
+- ⏳ Compilation pipeline
+- ⏳ SDK customization
 
-#### ⏳ zk-verification-service (10%)
-- Crate structure created
-- Dependencies configured
-- gRPC service implementation pending
+#### ✅ zk-verification-service (100%)
+- ✅ Crate structure created
+- ✅ gRPC protobuf definitions (Envoy ExtAuth)
+- ✅ Authorization service implementation
+- ✅ RISC Zero proof verification with Receipt::verify_and_decode()
+- ✅ Redis-based nullifier checker with atomic SET NX
+- ✅ Proper error handling and status codes
+- ✅ Dockerfile for containerization
+- ✅ Service runs on port 50051
+- ✅ All tests passing (13 total)
 
 #### ⏳ zcash-backend (10%)
 - Crate structure created
