@@ -56,69 +56,76 @@ khafi-gateway/
 
 ### 🔒 Zcash Integration Architecture
 
-**Overview:** Zcash shielded payment verification is the core privacy-preserving mechanism of Khafi Gateway. The verification happens inside the RISC Zero zkVM guest program.
+**Overview:** Zcash shielded payments provide the privacy-preserving payment mechanism for Khafi Gateway. Payment verification is **separated from zkVM business logic**.
 
-**Key Components:**
+**Critical Design Decision:** RISC Zero zkVM runs on **servers only** (not browsers/mobile), so spending keys cannot be processed in zkVM without violating user privacy.
 
-1. **Orchard Protocol** - Latest Zcash shielded pool (no trusted setup)
-2. **Notes** - Encrypted value representations (recipient, value, randomness)
-3. **Nullifiers** - Unique identifiers preventing double-spending
-4. **Commitment Tree** - Global Merkle tree of all note commitments
-5. **Cryptographic Operations:**
-   - **Sinsemilla Hash** - For Merkle tree operations (Pallas curve)
-   - **Poseidon Hash** - For nullifier derivation (arithmetic hash)
+**Architecture:**
 
-**Verification Flow in Guest Program:**
+1. **User's Wallet (Client-Side)**
+   - Creates Zcash transaction with spending key (stays local!)
+   - Broadcasts to Zcash network
+   - Transaction pays Khafi's address
 
-```rust
-// In methods/guest/src/main.rs
+2. **Zcash Backend Service (Server)**
+   - Monitors blockchain for payments to our address
+   - Extracts nullifiers from confirmed transactions
+   - Stores in payment database (PostgreSQL + Redis)
 
-fn verify_zcash_payment(inputs: &ZcashInputs) -> Nullifier {
-    // 1. Deserialize Orchard note
-    let note = deserialize_orchard_note(&inputs.note)?;
+3. **Gateway Verification (Before zkVM)**
+   - Checks nullifier exists in payment database
+   - Checks nullifier not already used (replay protection)
+   - Only then runs zkVM for business logic
 
-    // 2. Compute note commitment using Sinsemilla
-    let commitment = compute_note_commitment(&note)?;
+4. **zkVM Guest Program (Server)**
+   - **NO Zcash cryptography!**
+   - Only verifies business logic
+   - Input: nullifier (public) + business data (private)
+   - Output: compliance result
 
-    // 3. Verify Merkle proof against public anchor
-    let merkle_path = deserialize_merkle_path(&inputs.merkle_path)?;
-    verify_merkle_proof(commitment, &merkle_path, inputs.merkle_root)?;
+**Data Flow:**
 
-    // 4. Derive nullifier deriving key from spending key
-    let nk = derive_nullifier_key(&inputs.spending_key)?;
-
-    // 5. Compute nullifier using Poseidon hash
-    let nullifier = compute_nullifier(nk, &note, commitment)?;
-
-    nullifier
-}
+```
+User creates Zcash tx (spending key local)
+  ↓ Broadcast to blockchain
+Payment confirmed, nullifier published
+  ↓ Backend monitors
+Nullifier stored in payment DB
+  ↓ User makes API request
+Gateway checks payment DB
+  ↓ If valid payment
+Run zkVM for business logic only
+  ↓ Mark nullifier as used
+Grant/deny API access
 ```
 
 **Current Implementation Status:**
 
-- ✅ Architecture designed
-- ✅ Data structures defined (ZcashInputs in common crate)
-- ✅ Guest program structure in place
-- ⏳ Placeholder verification logic (needs Orchard implementation)
-- ⏳ Cryptographic operations pending (Sinsemilla, Poseidon)
+- ✅ Architecture designed (corrected!)
+- ✅ Data structures defined
+- ✅ zkVM guest program structure (business logic only)
+- ⏳ Zcash Backend service (blockchain monitoring)
+- ⏳ Payment database (nullifier storage)
+- ⏳ Gateway integration (payment check before zkVM)
 
-**Implementation Roadmap Options:**
+**Implementation Roadmap:**
 
-See `docs/zcash-integration.md` for detailed roadmap with three approaches:
-1. **Full Implementation** - Complete Orchard verification in zkVM
-2. **Simplified Verification** - Lightweight commitment/nullifier checks
-3. **Hybrid Approach** (RECOMMENDED) - Start simple, add complexity incrementally
+See `docs/zcash-integration.md` for detailed implementation plan:
+1. **Phase 1 (MVP):** Manual payment verification (3 days)
+2. **Phase 2 (Beta):** Automated blockchain monitoring (2 weeks)
+3. **Phase 3 (Production):** Full features with reorg handling (1 month)
 
 **Performance Estimates:**
 
-- Zcash verification in zkVM: ~175ms
-- Merkle path verification (32 levels): ~160ms
-- Nullifier derivation: ~10ms
+- Payment DB lookup (cached): <1ms
+- Payment DB lookup (uncached): ~5-10ms
+- zkVM business logic: ~500ms-2s (depends on rules)
+- Total request time: ~600ms-2.5s
 
 **Documentation:**
 
-- **`docs/zcash-integration.md`** - Complete integration guide (400+ lines)
-- **`docs/zcash-verification-flow.md`** - Technical deep dive (350+ lines)
+- **`docs/zcash-integration.md`** - Complete integration guide with corrected architecture
+- **`docs/zcash-verification-flow.md`** - Zcash Backend service technical details
 
 ---
 

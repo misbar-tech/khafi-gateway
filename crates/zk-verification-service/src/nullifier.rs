@@ -14,8 +14,8 @@ impl NullifierChecker {
     /// # Arguments
     /// * `redis_url` - Redis connection URL (e.g., "redis://localhost:6379")
     pub fn new(redis_url: &str) -> Result<Self> {
-        let redis_client = redis::Client::open(redis_url)
-            .map_err(|e| Error::Redis(e.to_string()))?;
+        let redis_client =
+            redis::Client::open(redis_url).map_err(|e| Error::Redis(e.to_string()))?;
         Ok(Self { redis_client })
     }
 

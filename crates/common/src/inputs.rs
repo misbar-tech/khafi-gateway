@@ -1,17 +1,29 @@
 use crate::Nullifier;
 use serde::{Deserialize, Serialize};
 
-/// Zcash payment inputs (universal across all customer SDKs)
-/// These prove that a valid Zcash shielded payment was made
+/// ⚠️ DEPRECATED: ZcashInputs is no longer used in the corrected architecture.
+///
+/// **Why:** RISC Zero zkVM runs on servers (not browsers/mobile), and spending keys
+/// cannot be sent to servers without violating user privacy.
+///
+/// **New Architecture:**
+/// - User creates Zcash transaction with their wallet (spending key stays local)
+/// - User broadcasts transaction to Zcash network
+/// - Zcash Backend monitors blockchain and records nullifiers in database
+/// - Gateway checks payment database BEFORE running zkVM
+/// - zkVM only receives nullifier + business data (no Zcash cryptography)
+///
+/// This struct is kept for compatibility but will be removed in future versions.
+#[deprecated(note = "Use nullifier in GuestInputs directly. Payment verification happens in Zcash Backend, not zkVM.")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZcashInputs {
-    /// Private: Spending key (reveals ability to spend the note)
+    /// DEPRECATED: Spending keys must never leave user's wallet
     pub spending_key: Vec<u8>,
-    /// Private: Note data (contains value, recipient, etc.)
+    /// DEPRECATED: Note data not needed in zkVM
     pub note: Vec<u8>,
-    /// Private: Merkle path proving note is in the commitment tree
+    /// DEPRECATED: Merkle path verification happens in Zcash Backend
     pub merkle_path: Vec<u8>,
-    /// Public: Merkle root of the commitment tree (from zcash-backend service)
+    /// DEPRECATED: Merkle root not needed in zkVM
     pub merkle_root: [u8; 32],
 }
 
@@ -35,12 +47,34 @@ pub struct BusinessInputs {
 }
 
 /// Combined inputs for RISC Zero guest program
-/// This is what gets passed to the guest code for verification
+///
+/// **Architecture:** Payment verification is separated from business logic.
+///
+/// **Payment Verification (BEFORE zkVM):**
+/// - Gateway checks nullifier exists in Zcash Backend payment database
+/// - Gateway checks nullifier not already used (replay protection)
+/// - Only if payment valid → run zkVM
+///
+/// **zkVM Guest Program (AFTER payment check):**
+/// - Receives nullifier (links request to payment) + business data
+/// - Verifies business logic ONLY
+/// - NO Zcash cryptography in zkVM!
+///
+/// This is what gets passed to the guest code for verification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuestInputs {
-    /// Universal: Zcash payment verification
+    /// DEPRECATED: Use nullifier directly instead
+    /// Payment verification happens in Zcash Backend, not in zkVM
+    #[deprecated(note = "Payment verification moved to Zcash Backend service")]
     pub zcash: ZcashInputs,
-    /// Custom: Business logic verification
+
+    /// Nullifier from user's Zcash transaction (PUBLIC input)
+    /// Links this API request to a specific Zcash payment
+    /// Verified against payment database before zkVM execution
+    pub nullifier: Nullifier,
+
+    /// Custom: Business logic verification (varies per use case)
+    /// This is the ONLY thing the zkVM verifies!
     pub business: BusinessInputs,
 }
 
@@ -48,16 +82,22 @@ pub struct GuestInputs {
 /// This is what the verifier can read without re-running the proof
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuestOutputs {
-    /// Nullifier derived from the Zcash note (prevents replay attacks)
+    /// Nullifier (passed through from input, NOT derived in zkVM)
+    /// Used for replay protection by zk-verification-service
+    /// This links the proof to a specific Zcash payment
     pub nullifier: Nullifier,
 
     /// Did the business validation pass?
-    /// true = compliant, false = non-compliant
+    /// true = compliant (grant API access)
+    /// false = non-compliant (deny API access)
     pub compliance_result: bool,
 
     /// Optional metadata about what was verified
     /// This can contain public proof of compliance without revealing private data
-    /// Example: "prescription_valid_for_patient_over_18" without revealing actual age
+    /// Examples:
+    /// - "age_verified_over_18" (without revealing actual age)
+    /// - "prescription_valid_for_controlled_substance" (without revealing patient/drug)
+    /// - "shipment_compliant_with_sanctions" (without revealing contents)
     pub metadata: Vec<u8>,
 }
 
@@ -104,6 +144,7 @@ mod tests {
 
     #[test]
     fn test_serialization() {
+        let nullifier = Nullifier::new([1u8; 32]);
         let inputs = GuestInputs {
             zcash: ZcashInputs {
                 spending_key: vec![1, 2, 3],
@@ -111,6 +152,7 @@ mod tests {
                 merkle_path: vec![7, 8, 9],
                 merkle_root: [0u8; 32],
             },
+            nullifier: nullifier.clone(),
             business: BusinessInputs {
                 private_data: vec![10, 11, 12],
                 public_params: vec![13, 14, 15],

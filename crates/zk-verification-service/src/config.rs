@@ -16,8 +16,8 @@ impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
         // Get Redis URL from environment or use default
-        let redis_url = std::env::var("REDIS_URL")
-            .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
 
         // Convert GUEST_ID from [u32; 8] to [u8; 32]
         let image_id = image_id_to_bytes(&GUEST_ID);

@@ -51,13 +51,11 @@ impl AuthorizationService {
             .map_err(|e| Status::invalid_argument(format!("Invalid receipt hex: {}", e)))?;
 
         // Deserialize Receipt
-        let (receipt, _): (Receipt, usize) = bincode::serde::decode_from_slice(
-            &receipt_bytes,
-            bincode::config::standard(),
-        )
-        .map_err(|e| {
-            Status::invalid_argument(format!("Failed to deserialize receipt: {}", e))
-        })?;
+        let (receipt, _): (Receipt, usize) =
+            bincode::serde::decode_from_slice(&receipt_bytes, bincode::config::standard())
+                .map_err(|e| {
+                    Status::invalid_argument(format!("Failed to deserialize receipt: {}", e))
+                })?;
 
         // Verify proof and decode outputs in one step
         let outputs = receipt
@@ -93,25 +91,22 @@ impl Authorization for AuthorizationService {
     ) -> Result<Response<CheckResponse>, Status> {
         let req = request.into_inner();
 
-        tracing::debug!("Received authorization check request for path: {:?}", req.path);
+        tracing::debug!(
+            "Received authorization check request for path: {:?}",
+            req.path
+        );
 
         // Extract x-zk-receipt header
-        let receipt_hex = req
-            .headers
-            .get("x-zk-receipt")
-            .ok_or_else(|| {
-                tracing::warn!("Missing x-zk-receipt header");
-                Status::unauthenticated("Missing x-zk-receipt header")
-            })?;
+        let receipt_hex = req.headers.get("x-zk-receipt").ok_or_else(|| {
+            tracing::warn!("Missing x-zk-receipt header");
+            Status::unauthenticated("Missing x-zk-receipt header")
+        })?;
 
         // Extract x-zk-nullifier header
-        let nullifier_hex = req
-            .headers
-            .get("x-zk-nullifier")
-            .ok_or_else(|| {
-                tracing::warn!("Missing x-zk-nullifier header");
-                Status::unauthenticated("Missing x-zk-nullifier header")
-            })?;
+        let nullifier_hex = req.headers.get("x-zk-nullifier").ok_or_else(|| {
+            tracing::warn!("Missing x-zk-nullifier header");
+            Status::unauthenticated("Missing x-zk-nullifier header")
+        })?;
 
         // Parse nullifier
         let nullifier = Nullifier::from_hex(nullifier_hex).map_err(|e| {
@@ -163,7 +158,10 @@ impl Authorization for AuthorizationService {
         }
 
         // All checks passed - allow the request
-        tracing::info!("Authorization successful for nullifier: {}", nullifier.to_hex());
+        tracing::info!(
+            "Authorization successful for nullifier: {}",
+            nullifier.to_hex()
+        );
         Ok(Response::new(CheckResponse {
             status: StatusCode::Ok as i32,
             message: "Proof verified successfully".to_string(),

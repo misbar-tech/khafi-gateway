@@ -72,12 +72,13 @@ pub fn extract_outputs(receipt: &Receipt) -> Result<GuestOutputs> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khafi_common::{ZcashInputs, BusinessInputs};
+    use khafi_common::{ZcashInputs, BusinessInputs, Nullifier};
 
     #[test]
     fn test_placeholder_proof_generation() {
         // Note: This test requires the guest program to be built first
         // Run `cargo build -p methods` before running tests
+        let nullifier = Nullifier::new([1u8; 32]);
         let inputs = GuestInputs {
             zcash: ZcashInputs {
                 spending_key: vec![1, 2, 3],
@@ -85,6 +86,7 @@ mod tests {
                 merkle_path: vec![7, 8, 9],
                 merkle_root: [0u8; 32],
             },
+            nullifier,
             business: BusinessInputs {
                 private_data: vec![10, 11, 12],
                 public_params: vec![13, 14, 15],

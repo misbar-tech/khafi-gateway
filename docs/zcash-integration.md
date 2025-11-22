@@ -223,9 +223,10 @@ The Orchard zkSNARK proves (without revealing private data):
 
 ### Architecture Overview
 
-Khafi Gateway uses **RISC Zero** to create a second layer of zero-knowledge proofs that combine:
-1. **Zcash payment proof** (proves a note was spent)
-2. **Business logic validation** (proves custom compliance rules)
+Khafi Gateway **separates** Zcash payment from business logic verification:
+1. **Zcash payment** - User creates transaction with their wallet (spending key stays private)
+2. **Payment verification** - Zcash Backend monitors blockchain, records nullifiers
+3. **Business logic** - RISC Zero zkVM verifies custom compliance rules
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -239,66 +240,111 @@ Khafi Gateway uses **RISC Zero** to create a second layer of zero-knowledge proo
 │  Zcash Orchard   │           │  Business Logic  │
 │  zkSNARK         │           │  Validation      │
 │  (on-chain)      │           │  (in RISC Zero)  │
+│                  │           │  Server-side     │
+│  User's wallet   │           │                  │
 └──────────────────┘           └──────────────────┘
           │                               │
-          │     Combined in RISC Zero     │
+          │ Nullifier links payment       │
+          │ to API request                │
           └───────────────┬───────────────┘
                           │
                           ▼
             ┌──────────────────────────┐
-            │  Single Proof Verifies:  │
-            │  1. Zcash payment valid  │
-            │  2. Business rules met   │
-            │  3. Nullifier unique     │
+            │  Two Separate Systems:   │
+            │  1. Zcash payment proof  │
+            │     (blockchain native)  │
+            │  2. Business logic proof │
+            │     (RISC Zero)          │
+            │  Linked via nullifier    │
             └──────────────────────────┘
 ```
 
-### Why Use RISC Zero + Zcash?
+### Why This Architecture?
 
-**Zcash zkSNARK alone:**
-- Proves: "I spent a valid note"
-- Does NOT prove: Custom business logic
+**Critical Constraint:** RISC Zero zkVM runs on **servers only** (not browsers/mobile).
 
-**RISC Zero zkVM:**
-- Can verify Zcash proof
-- Can execute arbitrary business logic
-- Combines both into single proof
+**User's Wallet:**
+- Creates Zcash transaction locally
+- **Spending key NEVER leaves user's device**
+- Broadcasts transaction to Zcash network
+- Transaction includes payment to Khafi's address
+
+**Zcash Backend (Server):**
+- Monitors Khafi's Zcash payment address
+- Records received transactions and their nullifiers
+- Stores nullifiers in database (Redis/PostgreSQL)
+
+**RISC Zero zkVM (Server):**
+- Verifies **business logic ONLY**
+- Takes nullifier as public input (links to payment)
+- Takes business data as private input
+- **NO Zcash cryptography** - payment already verified!
 
 **Benefits:**
-- **Privacy:** Spending key never leaves zkVM
+- **Privacy:** Spending key never shared, never leaves user's device
+- **Security:** Zero-knowledge for business data only
+- **Practical:** Works with browser/mobile (no zkVM client-side)
 - **Flexibility:** Any business rules via Logic Compiler
-- **Efficiency:** One proof for payment + compliance
-- **Composability:** Zcash verification is standard, business logic is customizable
+- **Composability:** Standard Zcash payment + custom business logic
 
 ### Data Flow
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  1. User's Wallet/SDK                                  │
-│     • Has: spending key, note data                     │
-│     • Fetches: current anchor from zcash-backend       │
-│     • Builds: Merkle path from wallet's local tree     │
+│  1. User's Zcash Wallet (Local Device)                │
+│     • User creates Zcash transaction                   │
+│     • Spending key stays on device (NEVER shared!)     │
+│     • Transaction pays Khafi's Zcash address           │
+│     • User broadcasts transaction to Zcash network     │
+│     • Nullifier is public output of transaction        │
 └────────────────────────────────────────────────────────┘
                           │
-                          ▼ ZcashInputs + BusinessInputs
+                          ▼ Transaction confirms on blockchain
 ┌────────────────────────────────────────────────────────┐
-│  2. RISC Zero Guest Program (zkVM)                     │
+│  2. Zcash Backend (Server - monitors blockchain)       │
+│     • Watches Khafi's payment address                  │
+│     • Detects incoming transaction                     │
+│     • Records nullifier in database                    │
+│     • Stores: nullifier, amount, timestamp, tx_id      │
+└────────────────────────────────────────────────────────┘
+                          │
+                          ▼ User makes API request
+┌────────────────────────────────────────────────────────┐
+│  3. User's Client/SDK                                  │
+│     Sends to Khafi Gateway:                            │
+│     • Nullifier (from their Zcash transaction)         │
+│     • Business private data (age, prescription, etc.)  │
+│     • NO spending key - payment already happened!      │
+└────────────────────────────────────────────────────────┘
+                          │
+                          ▼ Nullifier + Business Data
+┌────────────────────────────────────────────────────────┐
+│  4. Khafi Gateway (Server)                             │
+│     • Check: Does nullifier exist in payments DB?      │
+│       └─ NO → Reject (user didn't pay)                 │
+│     • Check: Has nullifier been used before?           │
+│       └─ YES → Reject (replay attack)                  │
+│     • If checks pass → Run RISC Zero zkVM              │
+└────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌────────────────────────────────────────────────────────┐
+│  5. RISC Zero Guest Program (zkVM on Server)           │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │  verify_zcash_payment():                         │  │
-│  │   • Deserialize Orchard note                     │  │
-│  │   • Compute note commitment                      │  │
-│  │   • Verify Merkle path against anchor            │  │
-│  │   • Derive nullifier using Poseidon hash         │  │
-│  │   • Validate spending authority                  │  │
+│  │  INPUTS:                                         │  │
+│  │   • nullifier (PUBLIC - links to payment)        │  │
+│  │   • business_data (PRIVATE - age, etc.)          │  │
+│  │   • public_params (PUBLIC - min age, etc.)       │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │  execute_business_logic():                       │  │
 │  │   • Custom validation rules (from Logic Compiler)│  │
 │  │   • Age verification, signature checks, etc.     │  │
+│  │   • NO Zcash cryptography - just business logic! │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │  env::commit(GuestOutputs):                      │  │
-│  │   • nullifier (for replay prevention)            │  │
+│  │   • nullifier (same as input)                    │  │
 │  │   • compliance_result (bool)                     │  │
 │  │   • metadata (optional attestations)             │  │
 │  └──────────────────────────────────────────────────┘  │
@@ -306,9 +352,9 @@ Khafi Gateway uses **RISC Zero** to create a second layer of zero-knowledge proo
                           │
                           ▼ Receipt (proof + journal)
 ┌────────────────────────────────────────────────────────┐
-│  3. zk-verification-service (Envoy ExtAuth)            │
+│  6. zk-verification-service (Envoy ExtAuth)            │
 │     • Verify RISC Zero proof cryptographically         │
-│     • Check nullifier uniqueness in Redis              │
+│     • Mark nullifier as "used" in Redis                │
 │     • Extract compliance_result from journal           │
 │     • Allow/deny API request based on compliance       │
 └────────────────────────────────────────────────────────┘
@@ -316,22 +362,39 @@ Khafi Gateway uses **RISC Zero** to create a second layer of zero-knowledge proo
 
 ### Input/Output Schema
 
-**ZcashInputs** (from `crates/common/src/inputs.rs`):
+**GuestInputs** (to RISC Zero zkVM):
 ```rust
-pub struct ZcashInputs {
-    pub spending_key: Vec<u8>,    // Spending key (32 bytes, PRIVATE)
-    pub note: Vec<u8>,            // Serialized Orchard note (PRIVATE)
-    pub merkle_path: Vec<u8>,     // Merkle path (~1KB, PRIVATE)
-    pub merkle_root: [u8; 32],    // Anchor from blockchain (PUBLIC)
+pub struct GuestInputs {
+    // Payment identifier (PUBLIC - links API request to Zcash payment)
+    pub nullifier: Nullifier,         // [u8; 32] from user's Zcash transaction
+
+    // Business-specific inputs (varies per use case)
+    pub business: BusinessInputs {
+        pub private_data: Vec<u8>,    // PRIVATE - age, prescription, etc.
+        pub public_params: Vec<u8>,   // PUBLIC - min_age, blacklists, etc.
+    },
 }
+
+// NO ZCASH INPUTS! Payment verification happens before zkVM execution.
 ```
 
 **GuestOutputs** (committed to journal):
 ```rust
 pub struct GuestOutputs {
-    pub nullifier: Nullifier,          // [u8; 32] - prevents replay
+    pub nullifier: Nullifier,          // [u8; 32] - same as input, prevents replay
     pub compliance_result: bool,        // Did validation pass?
     pub metadata: Vec<u8>,             // Optional attestations
+}
+```
+
+**Payment Database Schema** (Redis/PostgreSQL):
+```rust
+struct ReceivedPayment {
+    nullifier: [u8; 32],         // Primary key
+    amount: u64,                  // zatoshis received
+    tx_id: String,               // Zcash transaction ID
+    timestamp: DateTime,          // When received
+    used: bool,                  // Has this nullifier been used for API access?
 }
 ```
 
@@ -339,220 +402,379 @@ pub struct GuestOutputs {
 
 ## Current Implementation
 
-### Status: Placeholder ⏳
+### Status: Architecture Defined ✅, Backend Pending ⏳
 
-The Zcash verification is currently **mocked** with placeholders to prove the architecture works.
+**What's Implemented:**
+- ✅ RISC Zero zkVM guest program structure
+- ✅ GuestInputs/GuestOutputs types
+- ✅ Business logic verification placeholder
+- ✅ Nullifier-based replay protection in zk-verification-service
+
+**What's Pending:**
+- ⏳ Zcash Backend service (blockchain monitoring)
+- ⏳ Payment database (received nullifiers)
+- ⏳ Nullifier lookup before zkVM execution
 
 **Current code** (`crates/methods/guest/src/main.rs`):
 ```rust
-fn verify_zcash_payment(inputs: &ZcashInputs) -> Nullifier {
-    // TODO: Implement actual Zcash Orchard verification
-    // For now, placeholder: derive nullifier from spending key
-    let mut nullifier_bytes = [0u8; 32];
-    if inputs.spending_key.len() >= 32 {
-        nullifier_bytes.copy_from_slice(&inputs.spending_key[0..32]);
-    }
-    Nullifier::new(nullifier_bytes)
+fn main() {
+    let inputs: GuestInputs = env::read();
+
+    // NO ZCASH VERIFICATION IN ZKVM!
+    // Payment verification happens BEFORE this code runs
+    // via nullifier lookup in payment database
+
+    // Guest program ONLY verifies business logic
+    let compliance_result = execute_business_logic(&inputs.business);
+
+    let outputs = GuestOutputs {
+        nullifier: inputs.nullifier,  // Pass through for replay protection
+        compliance_result,
+        metadata: vec![],
+    };
+
+    env::commit(&outputs);
 }
 ```
 
-**What's Missing:**
-1. ❌ Orchard note deserialization
-2. ❌ Merkle path verification using Sinsemilla
-3. ❌ Proper nullifier derivation using Poseidon hash
-4. ❌ Spending authority verification
-5. ❌ Orchard crate integration in guest dependencies
+**What's Needed for Zcash Backend:**
+1. ⏳ Zcash Backend service implementation
+   - Monitor blockchain for payments to our address
+   - Parse transactions and extract nullifiers
+   - Store in payment database
+2. ⏳ Payment database schema (Redis/PostgreSQL)
+   - Store received payment nullifiers
+   - Track usage (prevent replay)
+3. ⏳ Zcash node connection
+   - Connect to Zebra or zcashd node
+   - Query blockchain state
+   - Subscribe to new transactions
+4. ⏳ Gateway payment verification
+   - Check nullifier in database before running zkVM
+   - Reject if not found (unpaid) or already used (replay)
 
 **What Works:**
-- ✅ Correct type definitions (ZcashInputs, GuestOutputs)
-- ✅ RISC Zero integration complete
+- ✅ RISC Zero zkVM integration complete
+- ✅ Guest program structure for business logic only
 - ✅ Proof generation and verification pipeline
-- ✅ Nullifier replay prevention via Redis
-- ✅ Architecture ready for real Zcash implementation
+- ✅ Nullifier-based replay protection in zk-verification-service
+- ✅ Correct separation of concerns (payment vs business logic)
 
-### Available Crates
+### Available Crates for Zcash Backend
 
-Workspace dependencies (already configured):
+Workspace dependencies (for zcash-backend service):
 ```toml
-zcash_primitives = "0.26.1"   # Core types, merkle trees
-orchard = "0.11"               # Orchard protocol implementation
-zcash_client_backend = "0.21"  # Wallet/client functions
+zcash_primitives = "0.26.1"   # Core types, transaction parsing
+orchard = "0.11"               # Orchard protocol types
+zcash_client_backend = "0.21"  # Blockchain client functions
 ```
 
-**Key modules:**
-- `orchard::Note` - Note structure
-- `orchard::tree::MerklePath` - Merkle proof types
-- `orchard::keys::SpendingKey` - Key management
-- `orchard::primitives::redpallas` - Signature scheme
-- `zcash_primitives::merkle_tree` - Merkle tree operations
+**Key modules for Backend:**
+- `zcash_client_backend::data_api` - Blockchain query API
+- `orchard::note::Nullifier` - Nullifier type
+- `zcash_primitives::transaction` - Transaction parsing
+- `zcash_primitives::consensus` - Network parameters
+
+**NOT needed in guest program** - All Zcash crypto stays in backend!
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 4: Zcash Integration (Future)
+### Phase 4: Zcash Backend Service (Future)
 
-**Three Implementation Approaches:**
+**Goal:** Monitor blockchain and verify payments before running zkVM.
 
-#### Option A: Full Orchard (Production-Ready)
-**Timeline:** 3-4 weeks
-**Effort:** High
-**Authenticity:** ✅ Full Zcash compatibility
+**Implementation Steps:**
+
+#### Step 1: Zcash Node Connection
+**Timeline:** 1 week
+**Effort:** Medium
 
 **Tasks:**
-1. Add `orchard` crate to guest dependencies (check `no_std` support)
-2. Implement Sinsemilla merkle hash verification
-3. Implement Poseidon hash for nullifier derivation
-4. Add Pallas/Vesta curve operations for zkVM
-5. Build SDK serialization utilities for Orchard types
-6. Connect zcash-backend to Zebra testnet node
-7. End-to-end testing with real Orchard notes
+1. Set up Zebra testnet node (or connect to public node)
+2. Implement RPC client for blockchain queries
+3. Query transaction history for our payment address
+4. Parse transactions to extract nullifiers
+5. Test connection and transaction parsing
+
+**Dependencies:**
+- Zebra node (recommended) or zcashd
+- `zcash_client_backend` crate for RPC
+- `zcash_primitives` for transaction parsing
+
+#### Step 2: Payment Database
+**Timeline:** 3 days
+**Effort:** Low
+
+**Tasks:**
+1. Design payment database schema:
+   ```sql
+   CREATE TABLE received_payments (
+       nullifier BYTEA PRIMARY KEY,
+       amount BIGINT NOT NULL,
+       tx_id TEXT NOT NULL,
+       timestamp TIMESTAMP NOT NULL,
+       used BOOLEAN DEFAULT FALSE
+   );
+   CREATE INDEX idx_used ON received_payments(used);
+   ```
+2. Implement database operations (insert, lookup, mark_used)
+3. Add Redis caching layer for hot lookups
+4. Test concurrent access and race conditions
+
+**Technology:**
+- PostgreSQL for persistent storage
+- Redis for fast lookups
+
+#### Step 3: Blockchain Monitor Service
+**Timeline:** 1 week
+**Effort:** Medium
+
+**Tasks:**
+1. Implement blockchain polling/subscription
+2. Detect new transactions to our address
+3. Extract nullifiers from confirmed transactions
+4. Store in payment database
+5. Handle reorganizations (blockchain reorgs)
+6. Add metrics and logging
 
 **Challenges:**
-- Orchard crate may not support `no_std` (required for zkVM)
-- Cryptographic operations may be slow in zkVM
-- Complex serialization between SDK and guest
+- Handling blockchain reorgs correctly
+- Managing confirmation depth requirements
+- Real-time vs batch processing trade-offs
 
-#### Option B: Simplified (MVP/Demo)
-**Timeline:** 1 week
+#### Step 4: Gateway Integration
+**Timeline:** 3 days
 **Effort:** Low
-**Authenticity:** ⚠️ Simulated for demonstration
 
 **Tasks:**
-1. Mock merkle verification (simple hash comparison)
-2. Simple nullifier derivation (SHA256 instead of Poseidon)
-3. Simplified note structure
-4. Document clearly as "demo mode"
-
-**Use case:** Proving the SaaS concept without full Zcash complexity
-
-#### Option C: Hybrid (Recommended)
-**Timeline:** 2 weeks
-**Effort:** Medium
-**Authenticity:** ✅ Core verification authentic
-
-**Tasks:**
-1. Implement real Sinsemilla merkle path verification
-2. Implement real Poseidon nullifier derivation
-3. Use simplified note structure initially
-4. Clear upgrade path to full Orchard
-
-**Balance:** Authenticity where it matters, pragmatism where it doesn't
+1. Add payment verification step before zkVM execution:
+   ```rust
+   fn verify_payment(nullifier: &Nullifier) -> Result<()> {
+       // Check nullifier exists in payments DB
+       if !payment_db.exists(nullifier)? {
+           return Err("Payment not found");
+       }
+       // Check not already used
+       if payment_db.is_used(nullifier)? {
+           return Err("Nullifier already used");
+       }
+       Ok(())
+   }
+   ```
+2. Update zk-verification-service to call payment verification
+3. Mark nullifier as used after successful zkVM execution
+4. Add proper error handling and user feedback
 
 ### Recommended Path
 
-**For SaaS/MVP:** Option B (Simplified)
-- Focus on Logic Compiler (unique differentiator)
-- Zcash verification is placeholder
-- Upgrade to full Orchard post-MVP
+**Phase 1 (MVP):** Simplified Backend
+- Manual payment verification (admin UI to add nullifiers)
+- Simple database lookup before zkVM
+- Focus on Logic Compiler (core differentiator)
+- **Timeline:** 3 days
 
-**For Production:** Option C (Hybrid) → Option A (Full)
-- Start with hybrid to prove architecture
-- Incrementally upgrade to full Orchard
-- Maintain backward compatibility
+**Phase 2 (Beta):** Automated Monitoring
+- Connect to testnet Zebra node
+- Automated transaction monitoring
+- Real-time payment verification
+- **Timeline:** 2 weeks
+
+**Phase 3 (Production):** Full Features
+- Mainnet support
+- High availability (multiple nodes)
+- Confirmation depth requirements
+- Reorg handling
+- **Timeline:** 1 month
 
 ---
 
 ## Code Examples
 
-### Example 1: Merkle Path Verification (Simplified)
+### Example 1: Zcash Backend - Transaction Monitoring
+
+```rust
+// In crates/zcash-backend/src/monitor.rs
+
+use zcash_client_backend::data_api::WalletRead;
+use zcash_primitives::transaction::Transaction;
+
+pub struct BlockchainMonitor {
+    client: ZcashClient,
+    payment_db: PaymentDatabase,
+    our_address: String,
+}
+
+impl BlockchainMonitor {
+    pub async fn monitor_transactions(&self) -> Result<()> {
+        // Subscribe to new blocks
+        let mut block_stream = self.client.subscribe_blocks().await?;
+
+        while let Some(block) = block_stream.next().await {
+            // Process all transactions in block
+            for tx in block.transactions {
+                self.process_transaction(&tx).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn process_transaction(&self, tx: &Transaction) -> Result<()> {
+        // Check if transaction pays our address
+        for output in tx.sapling_outputs() {
+            if output.address() == self.our_address {
+                // Extract nullifier from output
+                let nullifier = output.nullifier();
+
+                // Store in payment database
+                self.payment_db.insert(ReceivedPayment {
+                    nullifier: nullifier.to_bytes(),
+                    amount: output.value(),
+                    tx_id: tx.txid().to_string(),
+                    timestamp: Utc::now(),
+                    used: false,
+                }).await?;
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+### Example 2: Gateway - Payment Verification Before zkVM
+
+```rust
+// In crates/zk-verification-service/src/service.rs
+
+async fn handle_request(&self, nullifier: &Nullifier, business_data: Vec<u8>)
+    -> Result<Response>
+{
+    // STEP 1: Verify payment exists
+    let payment = self.payment_db.get(nullifier).await
+        .ok_or(Status::unauthenticated("Payment not found"))?;
+
+    // STEP 2: Check not already used
+    if payment.used {
+        return Err(Status::permission_denied("Nullifier already used"));
+    }
+
+    // STEP 3: Run zkVM for business logic ONLY
+    let guest_inputs = GuestInputs {
+        nullifier: nullifier.clone(),
+        business: BusinessInputs {
+            private_data: business_data,
+            public_params: vec![],  // e.g., min_age, blacklists
+        },
+    };
+
+    let proof = self.prover.generate_proof(&guest_inputs).await?;
+    let outputs: GuestOutputs = proof.verify_and_decode(&self.image_id)?;
+
+    // STEP 4: Check business logic result
+    if !outputs.compliance_result {
+        return Err(Status::permission_denied("Business logic validation failed"));
+    }
+
+    // STEP 5: Mark nullifier as used
+    self.payment_db.mark_used(nullifier).await?;
+
+    // SUCCESS - grant API access
+    Ok(Response::new(CheckResponse {
+        status: StatusCode::Ok as i32,
+        message: "Verified".to_string(),
+    }))
+}
+```
+
+### Example 3: zkVM Guest Program - Business Logic Only
 
 ```rust
 // In methods/guest/src/main.rs
 
-fn verify_merkle_path(
-    commitment: [u8; 32],
-    path: &[[u8; 32]],  // 32 siblings for 32-level tree
-    expected_root: [u8; 32],
-) -> bool {
-    let mut current = commitment;
+#![no_main]
+risc0_zkvm::guest::entry!(main);
 
-    for sibling in path.iter() {
-        // Simplified: just SHA256 hash
-        // Real Orchard uses Sinsemilla
-        let mut hasher = Sha256::new();
-        hasher.update(&current);
-        hasher.update(sibling);
-        current = hasher.finalize().into();
-    }
+use khafi_common::{GuestInputs, GuestOutputs, Nullifier};
 
-    current == expected_root
+fn main() {
+    // Read inputs
+    let inputs: GuestInputs = env::read();
+
+    // NO ZCASH VERIFICATION HERE!
+    // Payment was already verified before this code runs
+
+    // Execute business logic (generated by Logic Compiler)
+    let compliance_result = execute_business_logic(&inputs.business);
+
+    // Output results
+    let outputs = GuestOutputs {
+        nullifier: inputs.nullifier,  // Pass through for replay protection
+        compliance_result,
+        metadata: vec![],
+    };
+
+    env::commit(&outputs);
+}
+
+fn execute_business_logic(business: &BusinessInputs) -> bool {
+    // Parse private data
+    let age = parse_age(&business.private_data);
+
+    // Parse public params
+    let min_age = parse_min_age(&business.public_params);
+
+    // Verify age requirement
+    age >= min_age
 }
 ```
 
-### Example 2: Full Orchard Verification (Target)
+### Example 4: User's Zcash Wallet Integration
 
 ```rust
-// Future implementation with orchard crate
+// User's application code (NOT part of Khafi Gateway)
 
-use orchard::{Note, keys::SpendingKey, tree::MerklePath};
+use zcash_client_backend::keys::UnifiedSpendingKey;
 
-fn verify_zcash_payment(inputs: &ZcashInputs) -> Result<Nullifier> {
-    // 1. Deserialize note
-    let note = Note::read(&mut &inputs.note[..])?;
+async fn make_api_request_with_payment(
+    user_wallet: &ZcashWallet,
+    khafi_gateway_url: &str,
+    business_data: Vec<u8>,
+) -> Result<()> {
+    // STEP 1: User creates Zcash transaction (spending key stays local!)
+    let tx = user_wallet.create_transaction(
+        vec![Output {
+            address: KHAFI_PAYMENT_ADDRESS,  // Khafi's Zcash address
+            amount: API_CALL_PRICE,          // e.g., 0.001 ZEC
+        }]
+    )?;
 
-    // 2. Compute note commitment using Sinsemilla
-    let commitment = note.commitment();
+    // STEP 2: Broadcast to Zcash network
+    user_wallet.broadcast_transaction(&tx).await?;
 
-    // 3. Deserialize and verify merkle path
-    let merkle_path = MerklePath::from_bytes(&inputs.merkle_path)?;
-    let computed_root = merkle_path.root(commitment);
+    // STEP 3: Extract nullifier from transaction
+    let nullifier = tx.nullifier();  // Public output
 
-    // Verify against public anchor
-    if computed_root.to_bytes() != inputs.merkle_root {
-        return Err("Merkle proof verification failed");
-    }
+    // STEP 4: Wait for confirmation (optional)
+    user_wallet.wait_for_confirmation(&tx.txid(), 3).await?;
 
-    // 4. Derive nullifier using Poseidon hash
-    let spending_key = SpendingKey::from_bytes(&inputs.spending_key)?;
-    let fvk = FullViewingKey::from(&spending_key);
-    let nullifier = note.nullifier(&fvk);
+    // STEP 5: Call Khafi API with nullifier + business data
+    let response = reqwest::Client::new()
+        .post(format!("{}/api/verify", khafi_gateway_url))
+        .json(&json!({
+            "nullifier": hex::encode(nullifier),
+            "business_data": hex::encode(business_data),
+        }))
+        .send()
+        .await?;
 
-    Ok(Nullifier::new(nullifier.to_bytes()))
-}
-```
+    // Gateway will:
+    // 1. Check nullifier in payment database
+    // 2. Run zkVM to verify business logic
+    // 3. Mark nullifier as used
+    // 4. Grant API access
 
-### Example 3: SDK Integration
-
-```rust
-// In sdk-template/src/zcash_client.rs
-
-pub struct ZcashClient {
-    backend_url: String,
-}
-
-impl ZcashClient {
-    pub async fn prepare_zcash_inputs(
-        &self,
-        spending_key: &SpendingKey,
-        note: &Note,
-        note_position: u64,
-    ) -> Result<ZcashInputs> {
-        // 1. Fetch current anchor from zcash-backend
-        let anchor_response = self
-            .get_commitment_tree_root()
-            .await?;
-
-        // 2. Build merkle path from wallet's local tree
-        // (In real implementation, wallet maintains local tree)
-        let merkle_path = self.build_merkle_path(note_position)?;
-
-        // 3. Serialize for guest program
-        Ok(ZcashInputs {
-            spending_key: spending_key.to_bytes().to_vec(),
-            note: serialize_note(note),
-            merkle_path: serialize_merkle_path(&merkle_path),
-            merkle_root: anchor_response.root,
-        })
-    }
-
-    async fn get_commitment_tree_root(&self) -> Result<AnchorResponse> {
-        let response = reqwest::get(
-            format!("{}/commitment-tree/root", self.backend_url)
-        ).await?;
-
-        response.json().await
-    }
+    Ok(())
 }
 ```
 

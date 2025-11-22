@@ -10,7 +10,7 @@ pub mod prover;
 pub mod zcash_client;
 pub mod builders;
 
-use khafi_common::{GuestInputs, Receipt, Result, ZcashInputs, BusinessInputs};
+use khafi_common::{GuestInputs, Receipt, Result, ZcashInputs, BusinessInputs, Nullifier};
 use anyhow::Context;
 use methods::{GUEST_ELF, GUEST_ID};
 
@@ -77,24 +77,27 @@ impl KhafiSDK {
         self.image_id
     }
 
-    /// Generate a zero-knowledge proof combining Zcash payment + business logic
+    /// Generate a zero-knowledge proof for business logic validation
     ///
     /// This is the main function customers call to create proofs.
     ///
     /// # Arguments
-    /// * `zcash_inputs` - Zcash payment data (spending key, note, merkle path)
+    /// * `nullifier` - Nullifier from user's Zcash payment transaction
+    /// * `zcash_inputs` - DEPRECATED: Zcash payment data (kept for backward compatibility)
     /// * `business_inputs` - Customer-specific private data and validation parameters
     ///
     /// # Returns
     /// A `Receipt` containing the zk-STARK proof and the Image ID
     pub async fn generate_proof(
         &self,
+        nullifier: Nullifier,
         zcash_inputs: ZcashInputs,
         business_inputs: BusinessInputs,
     ) -> Result<Receipt> {
         // Combine inputs
         let guest_inputs = GuestInputs {
             zcash: zcash_inputs,
+            nullifier,
             business: business_inputs,
         };
 
