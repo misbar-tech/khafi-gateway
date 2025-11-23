@@ -40,12 +40,7 @@ pub struct ReceivedPayment {
 
 impl ReceivedPayment {
     /// Create a new payment record
-    pub fn new(
-        nullifier: Nullifier,
-        amount: u64,
-        tx_id: String,
-        block_height: u32,
-    ) -> Self {
+    pub fn new(nullifier: Nullifier, amount: u64, tx_id: String, block_height: u32) -> Self {
         Self {
             nullifier,
             amount,
@@ -76,8 +71,7 @@ impl Storage {
     pub async fn new(redis_url: &str) -> Result<Self> {
         info!("Connecting to Redis at {}", redis_url);
 
-        let client = redis::Client::open(redis_url)
-            .context("Failed to create Redis client")?;
+        let client = redis::Client::open(redis_url).context("Failed to create Redis client")?;
 
         let conn = ConnectionManager::new(client)
             .await
@@ -102,27 +96,31 @@ impl Storage {
         }
 
         // Store payment as hash
-        self.conn.hset_multiple(
-            &payment_key,
-            &[
-                ("nullifier", nullifier_hex.as_str()),
-                ("amount", &payment.amount.to_string()),
-                ("tx_id", &payment.tx_id),
-                ("block_height", &payment.block_height.to_string()),
-                ("timestamp", &payment.timestamp.to_rfc3339()),
-                ("used", "false"),
-                ("used_at", ""),
-            ],
-        ).await?;
+        self.conn
+            .hset_multiple(
+                &payment_key,
+                &[
+                    ("nullifier", nullifier_hex.as_str()),
+                    ("amount", &payment.amount.to_string()),
+                    ("tx_id", &payment.tx_id),
+                    ("block_height", &payment.block_height.to_string()),
+                    ("timestamp", &payment.timestamp.to_rfc3339()),
+                    ("used", "false"),
+                    ("used_at", ""),
+                ],
+            )
+            .await?;
 
         // Add to indexes
         self.conn.sadd("payments:all", &nullifier_hex).await?;
         self.conn.sadd("payments:unused", &nullifier_hex).await?;
-        self.conn.zadd(
-            "payments:by_height",
-            &nullifier_hex,
-            payment.block_height as i64,
-        ).await?;
+        self.conn
+            .zadd(
+                "payments:by_height",
+                &nullifier_hex,
+                payment.block_height as i64,
+            )
+            .await?;
 
         info!(
             "Inserted payment: nullifier={}, amount={}, block_height={}",
@@ -157,23 +155,20 @@ impl Storage {
         // Reconstruct payment
         let payment = ReceivedPayment {
             nullifier: nullifier.clone(),
-            amount: map.get("amount")
+            amount: map.get("amount").and_then(|s| s.parse().ok()).unwrap_or(0),
+            tx_id: map.get("tx_id").cloned().unwrap_or_default(),
+            block_height: map
+                .get("block_height")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
-            tx_id: map.get("tx_id")
-                .cloned()
-                .unwrap_or_default(),
-            block_height: map.get("block_height")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0),
-            timestamp: map.get("timestamp")
+            timestamp: map
+                .get("timestamp")
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(Utc::now),
-            used: map.get("used")
-                .map(|s| s == "true")
-                .unwrap_or(false),
-            used_at: map.get("used_at")
+            used: map.get("used").map(|s| s == "true").unwrap_or(false),
+            used_at: map
+                .get("used_at")
                 .filter(|s| !s.is_empty())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc)),
@@ -211,13 +206,9 @@ impl Storage {
 
         // Mark as used
         let now = Utc::now().to_rfc3339();
-        self.conn.hset_multiple(
-            &payment_key,
-            &[
-                ("used", "true"),
-                ("used_at", &now),
-            ],
-        ).await?;
+        self.conn
+            .hset_multiple(&payment_key, &[("used", "true"), ("used_at", &now)])
+            .await?;
 
         // Remove from unused set
         self.conn.srem("payments:unused", &nullifier_hex).await?;
@@ -238,7 +229,11 @@ impl Storage {
 
         for nullifier_hex in all_nullifiers {
             let payment_key = format!("payment:{}", nullifier_hex);
-            if let Ok(Some(amount_str)) = self.conn.hget::<_, _, Option<String>>(&payment_key, "amount").await {
+            if let Ok(Some(amount_str)) = self
+                .conn
+                .hget::<_, _, Option<String>>(&payment_key, "amount")
+                .await
+            {
                 if let Ok(amount) = amount_str.parse::<u64>() {
                     total_amount += amount;
                 }
@@ -255,7 +250,8 @@ impl Storage {
     /// Get the latest block height we've processed
     pub async fn get_latest_block_height(&mut self) -> Result<Option<u32>> {
         // Get the highest score (block height) from the sorted set
-        let result: Vec<(String, i64)> = self.conn
+        let result: Vec<(String, i64)> = self
+            .conn
             .zrevrange_withscores("payments:by_height", 0, 0)
             .await?;
 
@@ -320,12 +316,8 @@ mod tests {
             .expect("Failed to connect to Redis");
 
         let nullifier = Nullifier::new([2u8; 32]);
-        let payment = ReceivedPayment::new(
-            nullifier.clone(),
-            5000000,
-            "test_tx_456".to_string(),
-            12346,
-        );
+        let payment =
+            ReceivedPayment::new(nullifier.clone(), 5000000, "test_tx_456".to_string(), 12346);
 
         storage.insert_payment(&payment).await.unwrap();
 

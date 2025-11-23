@@ -15,8 +15,8 @@ use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use khafi_common::Nullifier;
 use crate::storage::{ReceivedPayment, Storage};
+use khafi_common::Nullifier;
 
 /// Shared application state
 #[derive(Clone)]
@@ -163,12 +163,7 @@ async fn insert_payment_handler(
     };
 
     // Create payment
-    let payment = ReceivedPayment::new(
-        nullifier,
-        req.amount,
-        req.tx_id,
-        req.block_height,
-    );
+    let payment = ReceivedPayment::new(nullifier, req.amount, req.tx_id, req.block_height);
 
     let mut storage = state.storage.lock().await;
 
@@ -221,8 +216,7 @@ async fn stats_handler(State(state): State<AppState>) -> Response {
 
 /// Parse nullifier from hex string
 fn parse_nullifier(hex: &str) -> Result<Nullifier, String> {
-    let bytes = hex::decode(hex)
-        .map_err(|e| format!("Invalid hex: {}", e))?;
+    let bytes = hex::decode(hex).map_err(|e| format!("Invalid hex: {}", e))?;
 
     if bytes.len() != 32 {
         return Err(format!("Nullifier must be 32 bytes, got {}", bytes.len()));

@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 /// - zkVM only receives nullifier + business data (no Zcash cryptography)
 ///
 /// This struct is kept for compatibility but will be removed in future versions.
-#[deprecated(note = "Use nullifier in GuestInputs directly. Payment verification happens in Zcash Backend, not zkVM.")]
+#[deprecated(
+    note = "Use nullifier in GuestInputs directly. Payment verification happens in Zcash Backend, not zkVM."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZcashInputs {
     /// DEPRECATED: Spending keys must never leave user's wallet

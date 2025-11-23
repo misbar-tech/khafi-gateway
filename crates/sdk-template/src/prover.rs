@@ -72,7 +72,7 @@ pub fn extract_outputs(receipt: &Receipt) -> Result<GuestOutputs> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khafi_common::{ZcashInputs, BusinessInputs, Nullifier};
+    use khafi_common::{BusinessInputs, Nullifier, ZcashInputs};
 
     #[test]
     fn test_placeholder_proof_generation() {

@@ -71,7 +71,10 @@ impl Receipt {
     ///
     /// # Returns
     /// * The deserialized GuestOutputs if successful
-    pub fn verify_and_decode(&self, expected_image_id: &[u8; 32]) -> crate::Result<crate::GuestOutputs> {
+    pub fn verify_and_decode(
+        &self,
+        expected_image_id: &[u8; 32],
+    ) -> crate::Result<crate::GuestOutputs> {
         // First verify the proof
         self.verify(expected_image_id)?;
 

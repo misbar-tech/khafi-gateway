@@ -18,8 +18,8 @@ impl DslParser {
     /// # Returns
     /// * Parsed and validated DSL structure
     pub fn parse_str(json_str: &str) -> Result<BusinessRulesDSL> {
-        let dsl: BusinessRulesDSL = serde_json::from_str(json_str)
-            .context("Failed to parse JSON DSL")?;
+        let dsl: BusinessRulesDSL =
+            serde_json::from_str(json_str).context("Failed to parse JSON DSL")?;
 
         Self::validate(&dsl)?;
 

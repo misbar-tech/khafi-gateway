@@ -46,8 +46,7 @@ impl Config {
             redis_url: env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
 
-            api_host: env::var("API_HOST")
-                .unwrap_or_else(|_| "0.0.0.0".to_string()),
+            api_host: env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
 
             api_port: env::var("API_PORT")
                 .unwrap_or_else(|_| "8081".to_string())

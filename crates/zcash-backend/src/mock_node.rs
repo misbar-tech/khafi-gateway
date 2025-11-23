@@ -72,7 +72,11 @@ impl MockNode {
 
         // Generate deterministic mock block
         let block = self.generate_mock_block(height).await;
-        debug!("Mock node: get_block({}) -> block with {} txs", height, block.transactions.len());
+        debug!(
+            "Mock node: get_block({}) -> block with {} txs",
+            height,
+            block.transactions.len()
+        );
 
         Ok(Some(block))
     }
@@ -193,7 +197,9 @@ mod tests {
 
         // Block 100000 should have a payment (divisible by 10)
         let block = node.get_block(100000).await.unwrap().unwrap();
-        let has_payment = block.transactions.iter()
+        let has_payment = block
+            .transactions
+            .iter()
             .flat_map(|tx| &tx.actions)
             .any(|action| action.is_our_payment);
 
@@ -206,7 +212,9 @@ mod tests {
 
         // Block 99999 should NOT have a payment (not divisible by 10)
         let block = node.get_block(99999).await.unwrap().unwrap();
-        let has_payment = block.transactions.iter()
+        let has_payment = block
+            .transactions
+            .iter()
             .flat_map(|tx| &tx.actions)
             .any(|action| action.is_our_payment);
 

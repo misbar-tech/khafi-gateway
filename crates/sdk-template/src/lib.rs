@@ -6,12 +6,12 @@
 //! 2. Type-safe input builders for the specific use case
 //! 3. Helper functions for the customer's domain
 
+pub mod builders;
 pub mod prover;
 pub mod zcash_client;
-pub mod builders;
 
-use khafi_common::{GuestInputs, Receipt, Result, ZcashInputs, BusinessInputs, Nullifier};
 use anyhow::Context;
+use khafi_common::{BusinessInputs, GuestInputs, Nullifier, Receipt, Result, ZcashInputs};
 use methods::{GUEST_ELF, GUEST_ID};
 
 /// Convert RISC Zero Image ID format ([u32; 8]) to our format ([u8; 32])

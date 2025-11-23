@@ -3,8 +3,8 @@
 //! This module handles communication with the Zcash backend service
 //! to fetch the commitment tree root and check nullifiers.
 
-use khafi_common::{Result, Nullifier};
 use anyhow::Context;
+use khafi_common::{Nullifier, Result};
 use serde::{Deserialize, Serialize};
 
 /// Client for the Zcash backend service
@@ -59,7 +59,11 @@ impl ZcashClient {
     ///
     /// This prevents replay attacks by ensuring each note can only be spent once
     pub async fn check_nullifier(&self, nullifier: &Nullifier) -> Result<bool> {
-        let url = format!("{}/api/nullifier/check/{}", self.base_url, nullifier.to_hex());
+        let url = format!(
+            "{}/api/nullifier/check/{}",
+            self.base_url,
+            nullifier.to_hex()
+        );
 
         let response = self
             .client

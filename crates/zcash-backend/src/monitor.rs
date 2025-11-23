@@ -39,13 +39,10 @@ impl Monitor {
         let mut storage = Storage::new(&config.redis_url).await?;
 
         // Get the latest block height from storage, or start from current chain height
-        let last_processed_height = storage
-            .get_latest_block_height()
-            .await?
-            .unwrap_or_else(|| {
-                info!("No previous block height found, will start from current chain height");
-                0
-            });
+        let last_processed_height = storage.get_latest_block_height().await?.unwrap_or_else(|| {
+            info!("No previous block height found, will start from current chain height");
+            0
+        });
 
         info!(
             "Monitor initialized, starting from block height {}",
@@ -136,11 +133,7 @@ impl Monitor {
             return Ok(());
         }
 
-        info!(
-            "Found {} payment(s) in block {}",
-            payments.len(),
-            height
-        );
+        info!("Found {} payment(s) in block {}", payments.len(), height);
 
         // Store each payment
         for payment in payments {
@@ -153,10 +146,7 @@ impl Monitor {
                     );
                 }
                 Ok(false) => {
-                    warn!(
-                        "Payment already exists: {}",
-                        payment.nullifier.to_hex()
-                    );
+                    warn!("Payment already exists: {}", payment.nullifier.to_hex());
                 }
                 Err(e) => {
                     error!("Failed to store payment: {:#}", e);

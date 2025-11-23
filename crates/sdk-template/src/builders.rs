@@ -3,8 +3,8 @@
 //! The Logic Compiler will generate custom versions of these builders
 //! tailored to each customer's use case.
 
-use khafi_common::{ZcashInputs, BusinessInputs};
 use anyhow::Result;
+use khafi_common::{BusinessInputs, ZcashInputs};
 
 /// Builder for Zcash payment inputs
 ///
@@ -48,10 +48,16 @@ impl ZcashInputsBuilder {
 
     pub fn build(self) -> Result<ZcashInputs> {
         Ok(ZcashInputs {
-            spending_key: self.spending_key.ok_or_else(|| anyhow::anyhow!("Missing spending_key"))?,
+            spending_key: self
+                .spending_key
+                .ok_or_else(|| anyhow::anyhow!("Missing spending_key"))?,
             note: self.note.ok_or_else(|| anyhow::anyhow!("Missing note"))?,
-            merkle_path: self.merkle_path.ok_or_else(|| anyhow::anyhow!("Missing merkle_path"))?,
-            merkle_root: self.merkle_root.ok_or_else(|| anyhow::anyhow!("Missing merkle_root"))?,
+            merkle_path: self
+                .merkle_path
+                .ok_or_else(|| anyhow::anyhow!("Missing merkle_path"))?,
+            merkle_root: self
+                .merkle_root
+                .ok_or_else(|| anyhow::anyhow!("Missing merkle_root"))?,
         })
     }
 }

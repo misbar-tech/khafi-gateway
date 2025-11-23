@@ -32,5 +32,5 @@ pub mod storage;
 
 // Re-export commonly used types
 pub use config::Config;
-pub use storage::{ReceivedPayment, Storage};
 pub use monitor::Monitor;
+pub use storage::{ReceivedPayment, Storage};

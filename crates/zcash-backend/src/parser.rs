@@ -3,10 +3,10 @@
 //! Extracts payment information from Zcash transactions.
 //! Simplified for mock mode - can be extended for real Orchard parsing.
 
+use crate::mock_node::{MockAction, MockBlock, MockTransaction};
+use crate::storage::ReceivedPayment;
 use anyhow::{Context, Result};
 use khafi_common::Nullifier;
-use crate::mock_node::{MockBlock, MockTransaction, MockAction};
-use crate::storage::ReceivedPayment;
 use tracing::debug;
 
 /// Parser for extracting payments from blocks
@@ -37,7 +37,11 @@ impl Parser {
             }
         }
 
-        debug!("Found {} payments in block {}", payments.len(), block.height);
+        debug!(
+            "Found {} payments in block {}",
+            payments.len(),
+            block.height
+        );
 
         Ok(payments)
     }
@@ -68,8 +72,8 @@ impl Parser {
         block_height: u32,
     ) -> Result<ReceivedPayment> {
         // Decode nullifier from hex
-        let nullifier_bytes = hex::decode(&action.nullifier)
-            .context("Failed to decode nullifier hex")?;
+        let nullifier_bytes =
+            hex::decode(&action.nullifier).context("Failed to decode nullifier hex")?;
 
         if nullifier_bytes.len() != 32 {
             anyhow::bail!("Nullifier must be 32 bytes, got {}", nullifier_bytes.len());
