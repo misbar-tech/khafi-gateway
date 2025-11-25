@@ -2279,6 +2279,7 @@ dependencies = [
  "anyhow",
  "axum",
  "khafi-common",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "serde",

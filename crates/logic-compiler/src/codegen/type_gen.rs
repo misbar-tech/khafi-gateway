@@ -194,10 +194,11 @@ fn format_ident(s: &str) -> proc_macro2::Ident {
 /// Format TokenStream as formatted Rust code
 fn format_code(tokens: &TokenStream) -> String {
     let code = tokens.to_string();
-    // Basic formatting - in production you'd use rustfmt
-    code.replace(" ; ", ";\n")
-        .replace(" { ", " {\n    ")
-        .replace(" } ", "\n}\n")
+    // Format using prettyplease
+    match syn::parse_file(&code) {
+        Ok(parsed) => prettyplease::unparse(&parsed),
+        Err(_) => code, // Fallback to unformatted if parse fails
+    }
 }
 
 #[cfg(test)]

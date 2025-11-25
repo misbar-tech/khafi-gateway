@@ -58,6 +58,7 @@ thiserror = "2.0.17"
 syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
+prettyplease = "0.2"
 
 # Web framework (for logic-compiler REST API)
 axum = "0.8.7"

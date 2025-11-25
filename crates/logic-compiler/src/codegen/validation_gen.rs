@@ -25,7 +25,8 @@ pub fn generate_validations(dsl: &BusinessRulesDSL) -> Result<String> {
         }
     };
 
-    Ok(combined.to_string())
+    // Format the generated code
+    format_rust_code(&combined.to_string())
 }
 
 /// Generate code for a single validation rule
@@ -232,7 +233,7 @@ fn generate_validation_rule(rule: &ValidationRule, _idx: usize) -> TokenStream {
 
 /// Generate helper functions needed for validation
 pub fn generate_helper_functions() -> String {
-    quote! {
+    let code = quote! {
         /// Calculate age from date of birth (ISO 8601 format: YYYY-MM-DD)
         fn calculate_age(dob: &str) -> u32 {
             // Parse date of birth
@@ -282,8 +283,15 @@ pub fn generate_helper_functions() -> String {
                 _ => false,
             }
         }
-    }
-    .to_string()
+    };
+
+    format_rust_code(&code.to_string()).unwrap_or_else(|_| code.to_string())
+}
+
+/// Format Rust code using prettyplease
+fn format_rust_code(code: &str) -> Result<String> {
+    let parsed = syn::parse_file(code)?;
+    Ok(prettyplease::unparse(&parsed))
 }
 
 /// Convert string to snake_case

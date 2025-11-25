@@ -247,9 +247,13 @@ pub async fn generate_sdk_handler(
     let sdk_dir = state.sdk_output_dir.join(&sdk_id);
 
     // Generate SDK package
+    let use_case = parsed_dsl.use_case.clone();
     let generator = CodeGenerator::new(parsed_dsl);
     match generator.generate_sdk_package(&sdk_dir) {
         Ok(_) => {
+            // Save use_case for better filename on download
+            let _ = std::fs::write(sdk_dir.join("use_case.txt"), &use_case);
+
             info!("SDK package generated: {}", sdk_id);
             Ok(Json(GenerateSdkResponse {
                 success: true,
@@ -274,7 +278,7 @@ pub async fn generate_sdk_handler(
 pub async fn download_sdk_handler(
     State(state): State<Arc<AppState>>,
     Path(sdk_id): Path<String>,
-) -> Result<Vec<u8>, ApiError> {
+) -> Result<impl IntoResponse, ApiError> {
     info!("Downloading SDK package: {}", sdk_id);
 
     let sdk_dir = state.sdk_output_dir.join(&sdk_id);
@@ -285,6 +289,14 @@ pub async fn download_sdk_handler(
             message: format!("SDK package not found: {}", sdk_id),
         });
     }
+
+    // Try to read use_case from metadata file for better filename
+    let use_case = std::fs::read_to_string(sdk_dir.join("use_case.txt"))
+        .ok()
+        .and_then(|s| Some(s.trim().replace(' ', "-").to_lowercase()))
+        .unwrap_or_else(|| "sdk".to_string());
+
+    let filename = format!("{}-sdk.tar.gz", use_case);
 
     // Create tarball
     let tarball_path = state.sdk_output_dir.join(format!("{}.tar.gz", sdk_id));
@@ -299,7 +311,18 @@ pub async fn download_sdk_handler(
     // Clean up tarball after reading
     let _ = std::fs::remove_file(&tarball_path);
 
-    Ok(tarball_data)
+    // Return with proper headers
+    use axum::body::Body;
+    use axum::response::Response;
+    use axum::http::header;
+
+    let content_disposition = format!("attachment; filename=\"{}\"", filename);
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/gzip")
+        .header(header::CONTENT_DISPOSITION, content_disposition)
+        .body(Body::from(tarball_data))
+        .unwrap())
 }
 
 /// List available templates
