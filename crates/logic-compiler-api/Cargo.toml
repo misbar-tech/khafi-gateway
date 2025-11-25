@@ -1,0 +1,44 @@
+[package]
+name = "logic-compiler-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Logic compiler
+logic-compiler = { path = "../logic-compiler" }
+khafi-common = { path = "../common" }
+
+# Web framework
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["trace", "cors", "fs"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Configuration
+dotenv = "0.15"
+
+# Utilities
+tempfile = { workspace = true }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+tar = "0.4"
+flate2 = "1.0"
+
+[[bin]]
+name = "logic-compiler-api"
+path = "src/main.rs"

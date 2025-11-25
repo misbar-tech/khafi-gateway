@@ -40,6 +40,21 @@ services:
       redis:
         condition: service_healthy
 
+  logic-compiler-api:
+    build:
+      context: .
+      dockerfile: crates/logic-compiler-api/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8082
+      - SDK_OUTPUT_DIR=/app/output/sdks
+      - TEMPLATES_DIR=/app/templates
+      - RUST_LOG=info
+    volumes:
+      - sdk-output:/app/output/sdks
+
   envoy:
     build:
       context: ./envoy
@@ -54,3 +69,4 @@ services:
 
 volumes:
   redis-data:
+  sdk-output:

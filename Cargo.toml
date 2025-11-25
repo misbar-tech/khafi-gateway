@@ -5,6 +5,7 @@ members = [
     "crates/methods",
     "crates/sdk-template",
     "crates/logic-compiler",
+    "crates/logic-compiler-api",
     "crates/zk-verification-service",
     "crates/zcash-backend",
 ]
@@ -66,6 +67,7 @@ tower-http = { version = "0.5", features = ["trace", "cors"] }
 # Utilities
 hex = "0.4"
 tempfile = "3.8"
+uuid = { version = "1.6", features = ["v4", "serde"] }
 
 # RISC Zero optimization profiles
 # Always optimize; building and running the guest takes much longer without optimization.
