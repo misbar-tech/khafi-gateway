@@ -80,6 +80,39 @@ pub struct GenerateSdkResponse {
     pub error: Option<String>,
 }
 
+/// Request to deploy DSL to gateway
+#[derive(Debug, Deserialize)]
+pub struct DeployRequest {
+    /// JSON DSL specification
+    pub dsl: serde_json::Value,
+
+    /// Customer identifier
+    pub customer_id: String,
+}
+
+/// Response from deployment
+#[derive(Debug, Serialize)]
+pub struct DeployResponse {
+    /// Whether deployment succeeded
+    pub success: bool,
+
+    /// Customer ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_id: Option<String>,
+
+    /// Image ID of deployed guest program
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_id: Option<String>,
+
+    /// API endpoint URL for proof generation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_endpoint: Option<String>,
+
+    /// Error message if deployment failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Template metadata
 #[derive(Debug, Serialize)]
 pub struct TemplateInfo {
@@ -364,6 +397,169 @@ pub async fn list_templates_handler(
     }
 
     Ok(Json(TemplatesResponse { templates }))
+}
+
+/// Deploy DSL to gateway - builds guest program and registers with Image ID Registry
+pub async fn deploy_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<DeployRequest>,
+) -> Result<Json<DeployResponse>, ApiError> {
+    info!("Deploying DSL for customer: {}", payload.customer_id);
+
+    // Convert Value to JSON string
+    let dsl_json = serde_json::to_string(&payload.dsl).map_err(|e| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: format!("Invalid JSON: {}", e),
+    })?;
+
+    // Parse DSL
+    let parsed_dsl = match DslParser::parse_str(&dsl_json) {
+        Ok(dsl) => dsl,
+        Err(e) => {
+            error!("Failed to parse DSL: {}", e);
+            return Ok(Json(DeployResponse {
+                success: false,
+                customer_id: None,
+                image_id: None,
+                api_endpoint: None,
+                error: Some(format!("DSL validation failed: {}", e)),
+            }));
+        }
+    };
+
+    // Generate unique deployment ID
+    let deployment_id = Uuid::new_v4().to_string();
+    let deployment_dir = state.sdk_output_dir.join(&deployment_id);
+
+    // Generate SDK package (which includes the guest program)
+    let generator = CodeGenerator::new(parsed_dsl.clone());
+    if let Err(e) = generator.generate_sdk_package(&deployment_dir) {
+        error!("SDK generation failed: {}", e);
+        return Ok(Json(DeployResponse {
+            success: false,
+            customer_id: None,
+            image_id: None,
+            api_endpoint: None,
+            error: Some(format!("SDK generation failed: {}", e)),
+        }));
+    }
+
+    // Build the guest program using cargo risczero build
+    info!("Building guest program for customer: {}", payload.customer_id);
+    let methods_dir = deployment_dir.join("methods");
+    let build_result = std::process::Command::new("cargo")
+        .arg("risczero")
+        .arg("build")
+        .current_dir(&methods_dir)
+        .output()
+        .map_err(|e| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Failed to execute build: {}", e),
+        })?;
+
+    if !build_result.status.success() {
+        let stderr = String::from_utf8_lossy(&build_result.stderr);
+        error!("Build failed: {}", stderr);
+        // Clean up failed directory
+        let _ = std::fs::remove_dir_all(&deployment_dir);
+        return Ok(Json(DeployResponse {
+            success: false,
+            customer_id: None,
+            image_id: None,
+            api_endpoint: None,
+            error: Some(format!("Build failed: {}", stderr)),
+        }));
+    }
+
+    info!("Build successful for customer: {}", payload.customer_id);
+
+    // Extract Image ID from the built ELF
+    // The ELF should be in methods/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/guest
+    let guest_elf_path = methods_dir
+        .join("target/riscv-guest/riscv32im-risc0-zkvm-elf/release/guest");
+
+    if !guest_elf_path.exists() {
+        error!("Guest ELF not found at expected path");
+        let _ = std::fs::remove_dir_all(&deployment_dir);
+        return Ok(Json(DeployResponse {
+            success: false,
+            customer_id: None,
+            image_id: None,
+            api_endpoint: None,
+            error: Some("Guest ELF not found after build".to_string()),
+        }));
+    }
+
+    // Compute Image ID from ELF
+    let elf_bytes = std::fs::read(&guest_elf_path).map_err(|e| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: format!("Failed to read guest ELF: {}", e),
+    })?;
+
+    // Use RISC Zero to compute the Image ID
+    use risc0_zkvm::compute_image_id;
+    let image_id_bytes = compute_image_id(&elf_bytes).map_err(|e| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: format!("Failed to compute image ID: {}", e),
+    })?;
+    let image_id = hex::encode(image_id_bytes);
+
+    info!("Computed Image ID: {} for customer: {}", image_id, payload.customer_id);
+
+    // Register with Image ID Registry
+    let registry_url = std::env::var("REGISTRY_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8083".to_string());
+
+    let registry_payload = serde_json::json!({
+        "customer_id": payload.customer_id,
+        "image_id": image_id,
+        "guest_program_path": guest_elf_path.to_string_lossy(),
+        "metadata": {
+            "use_case": parsed_dsl.use_case,
+            "description": parsed_dsl.description,
+            "version": parsed_dsl.version
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let registry_response = client
+        .post(format!("{}/api/deployments", registry_url))
+        .json(&registry_payload)
+        .send()
+        .await
+        .map_err(|e| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Failed to register with Image ID Registry: {}", e),
+        })?;
+
+    if !registry_response.status().is_success() {
+        let error_text = registry_response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        error!("Failed to register deployment: {}", error_text);
+        // Clean up deployment directory
+        let _ = std::fs::remove_dir_all(&deployment_dir);
+        return Ok(Json(DeployResponse {
+            success: false,
+            customer_id: None,
+            image_id: None,
+            api_endpoint: None,
+            error: Some(format!("Failed to register deployment: {}", error_text)),
+        }));
+    }
+
+    info!("Successfully deployed for customer: {}", payload.customer_id);
+
+    // Construct API endpoint URL
+    let gateway_url = std::env::var("GATEWAY_URL")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let api_endpoint = format!("{}/api/prove", gateway_url);
+
+    Ok(Json(DeployResponse {
+        success: true,
+        customer_id: Some(payload.customer_id.clone()),
+        image_id: Some(image_id),
+        api_endpoint: Some(api_endpoint),
+        error: None,
+    }))
 }
 
 /// Get a specific template by name

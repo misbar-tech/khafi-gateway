@@ -1,0 +1,211 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+  - name: main_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8080
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: backend
+              domains: ["*"]
+              routes:
+              # Logic Compiler API routes (no auth required)
+              - match:
+                  prefix: "/api/validate"
+                route:
+                  cluster: logic_compiler_api
+              - match:
+                  prefix: "/api/compile"
+                route:
+                  cluster: logic_compiler_api
+              - match:
+                  prefix: "/api/deploy"
+                route:
+                  cluster: logic_compiler_api
+              - match:
+                  prefix: "/api/templates"
+                route:
+                  cluster: logic_compiler_api
+
+              # Image ID Registry routes (internal only, could add auth)
+              - match:
+                  prefix: "/registry/"
+                route:
+                  prefix_rewrite: "/"
+                  cluster: image_id_registry
+
+              # Proof Generation API (protected by ZK verification + payment)
+              - match:
+                  prefix: "/api/prove"
+                route:
+                  cluster: proof_generation_service
+                typed_per_filter_config:
+                  envoy.filters.http.ext_authz:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                    check_settings:
+                      context_extensions:
+                        require_payment: "true"
+
+              # Health checks (no auth)
+              - match:
+                  prefix: "/health"
+                route:
+                  cluster: proof_generation_service
+
+          http_filters:
+          # Rate limiting filter
+          - name: envoy.filters.http.ratelimit
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+              domain: proof_api
+              stage: 0
+              rate_limit_service:
+                grpc_service:
+                  envoy_grpc:
+                    cluster_name: rate_limit_service
+                transport_api_version: V3
+
+          # External authorization filter (ZK verification + payment)
+          - name: envoy.filters.http.ext_authz
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: zk_verification_service
+                timeout: 5s
+              transport_api_version: V3
+              # Pass request body for proof verification
+              with_request_body:
+                max_request_bytes: 1048576  # 1MB
+                allow_partial_message: false
+              # Clear route cache to allow dynamic routing
+              clear_route_cache: true
+
+          # CORS filter
+          - name: envoy.filters.http.cors
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+
+          # Router must be last
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  # Logic Compiler API
+  - name: logic_compiler_api
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: logic_compiler_api
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: logic-compiler-api
+                port_value: 8082
+    health_checks:
+    - timeout: 1s
+      interval: 10s
+      unhealthy_threshold: 2
+      healthy_threshold: 2
+      http_health_check:
+        path: "/health"
+
+  # Image ID Registry
+  - name: image_id_registry
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: image_id_registry
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: image-id-registry
+                port_value: 8083
+    health_checks:
+    - timeout: 1s
+      interval: 10s
+      unhealthy_threshold: 2
+      healthy_threshold: 2
+      http_health_check:
+        path: "/health"
+
+  # Proof Generation Service
+  - name: proof_generation_service
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: proof_generation_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: proof-generation-service
+                port_value: 8084
+    health_checks:
+    - timeout: 1s
+      interval: 10s
+      unhealthy_threshold: 2
+      healthy_threshold: 2
+      http_health_check:
+        path: "/health"
+
+  # ZK Verification Service (ExtAuth)
+  - name: zk_verification_service
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+    load_assignment:
+      cluster_name: zk_verification_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: zk-verification-service
+                port_value: 50051
+
+  # Rate Limit Service (optional, using Envoy's ratelimit service)
+  # You would deploy a separate ratelimit service or use a simple implementation
+  - name: rate_limit_service
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+    load_assignment:
+      cluster_name: rate_limit_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ratelimit
+                port_value: 8081
+    # Note: If you don't have a rate limit service, comment out the rate limit filter above

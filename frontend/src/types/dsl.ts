@@ -100,6 +100,14 @@ export interface GenerateSdkResponse {
   error?: string;
 }
 
+export interface DeployResponse {
+  success: boolean;
+  customer_id?: string;
+  image_id?: string;
+  api_endpoint?: string;
+  error?: string;
+}
+
 export interface TemplateInfo {
   name: string;
   title: string;

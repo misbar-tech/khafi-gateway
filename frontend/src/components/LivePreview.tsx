@@ -7,9 +7,10 @@ import {
   Loader2,
   Eye,
   Code2,
+  Rocket,
 } from 'lucide-react';
 import { api, ApiError } from '@/services/api';
-import type { BusinessRulesDSL, ValidateResponse } from '@/types/dsl';
+import type { BusinessRulesDSL, ValidateResponse, DeployResponse } from '@/types/dsl';
 
 interface LivePreviewProps {
   dsl: BusinessRulesDSL | null;
@@ -22,7 +23,9 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
   const [loading, setLoading] = useState(false);
   const [compiling, setCompiling] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [showCode, setShowCode] = useState(false);
+  const [deploymentResult, setDeploymentResult] = useState<DeployResponse | null>(null);
 
   useEffect(() => {
     if (dsl && autoValidate) {
@@ -86,6 +89,29 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
       alert(err instanceof ApiError ? err.message : 'SDK generation failed');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function deployToGateway() {
+    if (!dsl) return;
+
+    // Generate a simple customer ID based on use_case
+    const customerId = `customer-${dsl.use_case.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+
+    try {
+      setDeploying(true);
+      setDeploymentResult(null);
+      const result = await api.deployDSL(dsl, customerId);
+
+      setDeploymentResult(result);
+
+      if (!result.success) {
+        alert(result.error || 'Deployment failed');
+      }
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Deployment failed');
+    } finally {
+      setDeploying(false);
     }
   }
 
@@ -174,9 +200,27 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
           </button>
 
           <button
+            onClick={deployToGateway}
+            disabled={!isValid || deploying}
+            className="w-full btn btn-success flex items-center justify-center"
+          >
+            {deploying ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Deploying...
+              </>
+            ) : (
+              <>
+                <Rocket className="w-4 h-4 mr-2" />
+                Deploy to Gateway
+              </>
+            )}
+          </button>
+
+          <button
             onClick={generateAndDownloadSDK}
             disabled={!isValid || generating}
-            className="w-full btn btn-success flex items-center justify-center"
+            className="w-full btn btn-secondary flex items-center justify-center text-sm"
           >
             {generating ? (
               <>
@@ -186,12 +230,49 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
             ) : (
               <>
                 <Download className="w-4 h-4 mr-2" />
-                Generate & Download SDK
+                Download SDK (Legacy)
               </>
             )}
           </button>
         </div>
       </div>
+
+      {/* Deployment Result */}
+      {deploymentResult && deploymentResult.success && (
+        <div className="p-4 border-b border-gray-200 bg-green-50">
+          <div className="card p-4">
+            <div className="flex items-start text-green-600 mb-3">
+              <CheckCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-semibold">Deployment Successful!</p>
+              </div>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="font-medium text-gray-700">Customer ID:</span>{' '}
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                  {deploymentResult.customer_id}
+                </code>
+              </div>
+              <div>
+                <span className="font-medium text-gray-700">Image ID:</span>{' '}
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                  {deploymentResult.image_id}
+                </code>
+              </div>
+              <div>
+                <span className="font-medium text-gray-700">API Endpoint:</span>{' '}
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                  {deploymentResult.api_endpoint}
+                </code>
+              </div>
+              <p className="text-xs text-gray-600 mt-3">
+                Your guest program has been deployed and is ready to generate proofs!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Code Preview */}
       {showCode && compiledCode && (

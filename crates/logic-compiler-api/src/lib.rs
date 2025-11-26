@@ -63,7 +63,9 @@ pub fn create_router(state: AppState) -> Router {
         // DSL validation and compilation
         .route("/api/validate", post(handlers::validate_handler))
         .route("/api/compile", post(handlers::compile_handler))
-        // SDK generation and download
+        // Deployment
+        .route("/api/deploy", post(handlers::deploy_handler))
+        // SDK generation and download (legacy)
         .route("/api/sdk/generate", post(handlers::generate_sdk_handler))
         .route(
             "/api/sdk/download/{id}",

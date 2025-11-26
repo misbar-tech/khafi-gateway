@@ -1,0 +1,45 @@
+[package]
+name = "proof-generation-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# RISC Zero
+risc0-zkvm = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Image ID Registry client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Utilities
+hex = { workspace = true }
+uuid = { workspace = true }
+
+# Config
+dotenvy = "0.15"
+
+[[bin]]
+name = "proof-generation-service"
+path = "src/main.rs"
+
+[lib]
+name = "proof_generation_service"
+path = "src/lib.rs"

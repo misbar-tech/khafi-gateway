@@ -10,6 +10,9 @@ repository.workspace = true
 logic-compiler = { path = "../logic-compiler" }
 khafi-common = { path = "../common" }
 
+# RISC Zero (for Image ID computation)
+risc0-zkvm = { workspace = true }
+
 # Web framework
 axum = { workspace = true }
 tower = { workspace = true }
@@ -38,6 +41,8 @@ tempfile = { workspace = true }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 tar = "0.4"
 flate2 = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+hex = { workspace = true }
 
 [[bin]]
 name = "logic-compiler-api"

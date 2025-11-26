@@ -3,6 +3,7 @@ import type {
   ValidateResponse,
   CompileResponse,
   GenerateSdkResponse,
+  DeployResponse,
   TemplatesResponse,
 } from '@/types/dsl';
 
@@ -89,6 +90,16 @@ export const api = {
     return fetchAPI('/api/sdk/generate', {
       method: 'POST',
       body: JSON.stringify({ dsl }),
+    });
+  },
+
+  /**
+   * Deploy DSL to gateway
+   */
+  async deployDSL(dsl: BusinessRulesDSL, customerId: string): Promise<DeployResponse> {
+    return fetchAPI('/api/deploy', {
+      method: 'POST',
+      body: JSON.stringify({ dsl, customer_id: customerId }),
     });
   },
 
