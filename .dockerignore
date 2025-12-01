@@ -1,0 +1,13 @@
+target/
+.git/
+.gitignore
+*.md
+!DEPLOYMENT.md
+frontend/node_modules/
+frontend/dist/
+.env
+.env.*
+*.log
+.idea/
+.vscode/
+.DS_Store
