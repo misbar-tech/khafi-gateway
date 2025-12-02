@@ -50,12 +50,36 @@ services:
       - SDK_OUTPUT_DIR=/app/output/sdks
       - TEMPLATES_DIR=/app/templates
       - REGISTRY_URL=http://image-id-registry:8083
+      - BUILD_SERVICE_URL=http://build-service:8085
       - GATEWAY_URL=http://localhost:8080
       - RUST_LOG=info
     volumes:
       - sdk-output:/app/output/sdks
     depends_on:
       - image-id-registry
+      - build-service
+
+  build-service:
+    build:
+      context: .
+      dockerfile: crates/build-service/Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REGISTRY_URL=http://image-id-registry:8083
+      - GATEWAY_URL=http://localhost:8080
+      - BUILD_HOST=0.0.0.0
+      - BUILD_PORT=8085
+      - BUILD_DIR=/app/builds
+      - RUST_LOG=info
+    volumes:
+      - build-artifacts:/app/builds
+    depends_on:
+      redis:
+        condition: service_healthy
+      image-id-registry:
+        condition: service_started
 
   image-id-registry:
     build:
@@ -114,3 +138,4 @@ services:
 volumes:
   redis-data:
   sdk-output:
+  build-artifacts:

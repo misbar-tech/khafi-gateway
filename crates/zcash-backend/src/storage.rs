@@ -262,6 +262,22 @@ impl Storage {
         }
     }
 
+    /// Set the current blockchain height (for confirmation counting)
+    pub async fn set_block_height(&mut self, height: u32) -> Result<()> {
+        self.conn
+            .set::<_, _, ()>("chain:block_height", height)
+            .await
+            .context("Failed to set block height")?;
+        debug!("Updated chain block height to {}", height);
+        Ok(())
+    }
+
+    /// Get the current blockchain height
+    pub async fn get_block_height(&mut self) -> Result<Option<u32>> {
+        let height: Option<String> = self.conn.get("chain:block_height").await?;
+        Ok(height.and_then(|h| h.parse().ok()))
+    }
+
     /// Health check - verify Redis connection
     pub async fn health_check(&mut self) -> Result<()> {
         let _: String = redis::cmd("PING")

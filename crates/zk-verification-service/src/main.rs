@@ -4,6 +4,7 @@
 
 mod config;
 mod nullifier;
+mod payment;
 mod service;
 
 use config::Config;

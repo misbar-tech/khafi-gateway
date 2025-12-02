@@ -105,6 +105,7 @@ export interface DeployResponse {
   customer_id?: string;
   image_id?: string;
   api_endpoint?: string;
+  job_id?: string;
   error?: string;
 }
 

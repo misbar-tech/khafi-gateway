@@ -1,0 +1,50 @@
+[package]
+name = "build-service"
+version = "0.1.0"
+edition = "2021"
+description = "Async build service for RISC Zero guest programs"
+
+[dependencies]
+# Logic compiler for code generation
+logic-compiler = { path = "../logic-compiler" }
+
+# Web framework
+axum = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Storage
+redis = { workspace = true }
+
+# HTTP client for registry
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+hex = { workspace = true }
+tempfile = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config
+dotenvy = "0.15"
+
+[[bin]]
+name = "build-service"
+path = "src/main.rs"
+
+[lib]
+name = "build_service"
+path = "src/lib.rs"

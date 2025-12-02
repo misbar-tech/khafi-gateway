@@ -683,6 +683,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "build-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.7",
+ "chrono",
+ "dotenvy",
+ "hex",
+ "logic-compiler",
+ "redis",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tower 0.5.2",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber 0.3.20",
+ "uuid",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5670,10 +5694,14 @@ dependencies = [
  "hex",
  "khafi-common",
  "orchard",
+ "prost 0.14.1",
  "redis",
  "serde",
  "serde_json",
  "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
  "tower-http 0.6.6",
  "tracing",
  "tracing-subscriber 0.3.20",
@@ -5931,6 +5959,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
+ "chrono",
  "hex",
  "khafi-common",
  "methods",

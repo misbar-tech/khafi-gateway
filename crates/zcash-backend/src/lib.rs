@@ -25,6 +25,7 @@
 
 pub mod api;
 pub mod config;
+pub mod lightwalletd_client;
 pub mod mock_node;
 pub mod monitor;
 pub mod parser;

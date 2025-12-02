@@ -1,5 +1,6 @@
 //! Configuration management for ZK Verification Service
 
+use crate::payment::PaymentConfig;
 use methods::GUEST_ID;
 
 /// Service configuration
@@ -10,6 +11,9 @@ pub struct Config {
 
     /// Expected Image ID for proof verification
     pub image_id: [u8; 32],
+
+    /// Payment verification configuration
+    pub payment: PaymentConfig,
 }
 
 impl Config {
@@ -22,9 +26,13 @@ impl Config {
         // Convert GUEST_ID from [u32; 8] to [u8; 32]
         let image_id = image_id_to_bytes(&GUEST_ID);
 
+        // Load payment config from environment
+        let payment = PaymentConfig::from_env();
+
         Self {
             redis_url,
             image_id,
+            payment,
         }
     }
 }

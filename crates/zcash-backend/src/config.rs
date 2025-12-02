@@ -23,14 +23,9 @@ pub struct Config {
     /// Whether to use mock Zcash node (for development/testing)
     pub mock_mode: bool,
 
-    /// Zcash node RPC URL (when not in mock mode)
-    pub zcash_node_url: Option<String>,
-
-    /// Zcash node RPC username
-    pub zcash_node_user: Option<String>,
-
-    /// Zcash node RPC password
-    pub zcash_node_password: Option<String>,
+    /// Lightwalletd gRPC endpoint (when not in mock mode)
+    /// Example: "https://testnet.lightwalletd.com:9067"
+    pub lightwalletd_url: Option<String>,
 
     /// Khafi's Zcash payment address
     pub payment_address: String,
@@ -63,9 +58,7 @@ impl Config {
                 .parse()
                 .context("Invalid MOCK_MODE (expected true/false)")?,
 
-            zcash_node_url: env::var("ZCASH_NODE_URL").ok(),
-            zcash_node_user: env::var("ZCASH_NODE_USER").ok(),
-            zcash_node_password: env::var("ZCASH_NODE_PASSWORD").ok(),
+            lightwalletd_url: env::var("LIGHTWALLETD_URL").ok(),
 
             payment_address: env::var("PAYMENT_ADDRESS")
                 .unwrap_or_else(|_| "u1test_mock_address".to_string()),
@@ -87,10 +80,10 @@ impl Config {
             anyhow::bail!("POLLING_INTERVAL_SECS must be greater than 0");
         }
 
-        // If not in mock mode, require Zcash node configuration
+        // If not in mock mode, require lightwalletd configuration
         if !self.mock_mode {
-            if self.zcash_node_url.is_none() {
-                anyhow::bail!("ZCASH_NODE_URL is required when MOCK_MODE=false");
+            if self.lightwalletd_url.is_none() {
+                anyhow::bail!("LIGHTWALLETD_URL is required when MOCK_MODE=false");
             }
         }
 

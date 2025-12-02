@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  CheckCircle,
+  CheckCircle2,
   XCircle,
   AlertCircle,
   Download,
@@ -8,6 +8,9 @@ import {
   Eye,
   Code2,
   Rocket,
+  Copy,
+  ExternalLink,
+  Zap,
 } from 'lucide-react';
 import { api, ApiError } from '@/services/api';
 import type { BusinessRulesDSL, ValidateResponse, DeployResponse } from '@/types/dsl';
@@ -26,6 +29,7 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
   const [deploying, setDeploying] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [deploymentResult, setDeploymentResult] = useState<DeployResponse | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     if (dsl && autoValidate) {
@@ -64,10 +68,9 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
         setShowCode(true);
       } else {
         setCompiledCode(null);
-        alert(result.error || 'Compilation failed');
       }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Compilation failed');
+      console.error('Compilation failed:', err);
     } finally {
       setCompiling(false);
     }
@@ -80,13 +83,10 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
       setGenerating(true);
       const result = await api.generateSDK(dsl);
       if (result.success && result.sdk_id) {
-        // Download SDK
         await api.downloadSDK(result.sdk_id);
-      } else {
-        alert(result.error || 'SDK generation failed');
       }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'SDK generation failed');
+      console.error('SDK generation failed:', err);
     } finally {
       setGenerating(false);
     }
@@ -95,53 +95,52 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
   async function deployToGateway() {
     if (!dsl) return;
 
-    // Generate a simple customer ID based on use_case
     const customerId = `customer-${dsl.use_case.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
 
     try {
       setDeploying(true);
       setDeploymentResult(null);
       const result = await api.deployDSL(dsl, customerId);
-
       setDeploymentResult(result);
-
-      if (!result.success) {
-        alert(result.error || 'Deployment failed');
-      }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Deployment failed');
+      console.error('Deployment failed:', err);
     } finally {
       setDeploying(false);
     }
   }
 
+  function copyToClipboard(text: string, field: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(field);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
   const isValid = validationResult?.valid ?? false;
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center">
-            <Eye className="w-5 h-5 text-primary-600 mr-2" />
-            <h2 className="text-lg font-semibold text-gray-900">Live Preview</h2>
-          </div>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="p-4 border-b border-dark-800/50">
+        <div className="flex items-center space-x-2 mb-4">
+          <Eye className="w-5 h-5 text-primary-400" />
+          <h2 className="font-semibold text-white">Live Preview</h2>
         </div>
 
-        {/* Validation Status */}
-        <div className="card p-4 mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+        {/* Validation Status Card */}
+        <div className="rounded-xl bg-dark-800/30 border border-dark-700/50 p-4 mb-4">
+          <h3 className="text-xs font-medium text-dark-400 uppercase tracking-wider mb-3">
             Validation Status
           </h3>
 
           {loading && (
-            <div className="flex items-center text-gray-600">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+            <div className="flex items-center text-dark-400">
+              <Loader2 className="w-5 h-5 animate-spin mr-2 text-primary-400" />
               Validating...
             </div>
           )}
 
           {!loading && !validationResult && !dsl && (
-            <div className="flex items-center text-gray-500">
+            <div className="flex items-center text-dark-500">
               <AlertCircle className="w-5 h-5 mr-2" />
               No DSL to validate
             </div>
@@ -150,25 +149,31 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
           {!loading && validationResult && (
             <div>
               {isValid ? (
-                <div className="flex items-start text-green-600">
-                  <CheckCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start">
+                  <div className="w-8 h-8 rounded-lg bg-success-500/20 flex items-center justify-center mr-3 flex-shrink-0">
+                    <CheckCircle2 className="w-4 h-4 text-success-400" />
+                  </div>
                   <div>
-                    <p className="font-medium">DSL is valid</p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Use case: {validationResult.parsed_dsl?.use_case}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Rules: {validationResult.parsed_dsl?.validation_rules.length || 0}
-                    </p>
+                    <p className="font-medium text-success-400">DSL is valid</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="badge badge-success text-xs">
+                        {validationResult.parsed_dsl?.use_case}
+                      </span>
+                      <span className="badge bg-dark-700/50 text-dark-300 border border-dark-600/50 text-xs">
+                        {validationResult.parsed_dsl?.validation_rules.length || 0} rules
+                      </span>
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-start text-red-600">
-                  <XCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">Validation failed</p>
+                <div className="flex items-start">
+                  <div className="w-8 h-8 rounded-lg bg-error-500/20 flex items-center justify-center mr-3 flex-shrink-0">
+                    <XCircle className="w-4 h-4 text-error-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-error-400">Validation failed</p>
                     {validationResult.error && (
-                      <p className="text-sm text-red-700 mt-1 break-words">
+                      <p className="text-xs text-error-400/70 mt-1 font-mono break-words">
                         {validationResult.error}
                       </p>
                     )}
@@ -184,7 +189,7 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
           <button
             onClick={compileDSL}
             disabled={!isValid || compiling}
-            className="w-full btn btn-primary flex items-center justify-center"
+            className="w-full btn btn-secondary flex items-center justify-center"
           >
             {compiling ? (
               <>
@@ -194,7 +199,7 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
             ) : (
               <>
                 <Code2 className="w-4 h-4 mr-2" />
-                Compile to Code
+                Preview Generated Code
               </>
             )}
           </button>
@@ -202,16 +207,16 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
           <button
             onClick={deployToGateway}
             disabled={!isValid || deploying}
-            className="w-full btn btn-success flex items-center justify-center"
+            className="w-full btn btn-primary flex items-center justify-center group"
           >
             {deploying ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Deploying...
+                Deploying to Gateway...
               </>
             ) : (
               <>
-                <Rocket className="w-4 h-4 mr-2" />
+                <Rocket className="w-4 h-4 mr-2 group-hover:animate-bounce" />
                 Deploy to Gateway
               </>
             )}
@@ -220,16 +225,16 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
           <button
             onClick={generateAndDownloadSDK}
             disabled={!isValid || generating}
-            className="w-full btn btn-secondary flex items-center justify-center text-sm"
+            className="w-full btn btn-ghost flex items-center justify-center text-xs"
           >
             {generating ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                 Generating...
               </>
             ) : (
               <>
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-3.5 h-3.5 mr-1.5" />
                 Download SDK (Legacy)
               </>
             )}
@@ -239,36 +244,92 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
 
       {/* Deployment Result */}
       {deploymentResult && deploymentResult.success && (
-        <div className="p-4 border-b border-gray-200 bg-green-50">
-          <div className="card p-4">
-            <div className="flex items-start text-green-600 mb-3">
-              <CheckCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+        <div className="p-4 border-b border-dark-800/50 animate-slide-up">
+          <div className="rounded-xl bg-primary-500/10 border border-primary-500/30 p-4">
+            <div className="flex items-start mb-4">
+              <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center mr-3 flex-shrink-0">
+                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+              </div>
               <div>
-                <p className="font-semibold">Deployment Successful!</p>
+                <p className="font-semibold text-primary-400">Build Queued!</p>
+                <p className="text-xs text-primary-400/70 mt-0.5">
+                  Your ZK circuit is being built. This may take a few minutes.
+                </p>
               </div>
             </div>
-            <div className="space-y-2 text-sm">
-              <div>
-                <span className="font-medium text-gray-700">Customer ID:</span>{' '}
-                <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+
+            <div className="space-y-3">
+              {/* Job ID */}
+              {deploymentResult.job_id && (
+                <div className="rounded-lg bg-dark-900/50 p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-dark-400">Build Job ID</span>
+                    <button
+                      onClick={() => copyToClipboard(deploymentResult.job_id || '', 'job_id')}
+                      className="text-dark-400 hover:text-white transition-colors"
+                    >
+                      {copied === 'job_id' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-success-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <code className="text-xs text-accent-300 font-mono break-all">
+                    {deploymentResult.job_id}
+                  </code>
+                </div>
+              )}
+
+              {/* Customer ID */}
+              <div className="rounded-lg bg-dark-900/50 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-dark-400">Customer ID</span>
+                  <button
+                    onClick={() => copyToClipboard(deploymentResult.customer_id || '', 'customer_id')}
+                    className="text-dark-400 hover:text-white transition-colors"
+                  >
+                    {copied === 'customer_id' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-success-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+                <code className="text-xs text-primary-300 font-mono break-all">
                   {deploymentResult.customer_id}
                 </code>
               </div>
-              <div>
-                <span className="font-medium text-gray-700">Image ID:</span>{' '}
-                <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
-                  {deploymentResult.image_id}
-                </code>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">API Endpoint:</span>{' '}
-                <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+
+              {/* API Endpoint */}
+              <div className="rounded-lg bg-dark-900/50 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-dark-400">API Endpoint</span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => copyToClipboard(deploymentResult.api_endpoint || '', 'api_endpoint')}
+                      className="text-dark-400 hover:text-white transition-colors"
+                    >
+                      {copied === 'api_endpoint' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-success-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                    <a
+                      href={deploymentResult.api_endpoint}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-dark-400 hover:text-white transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+                <code className="text-xs text-white font-mono break-all">
                   {deploymentResult.api_endpoint}
                 </code>
               </div>
-              <p className="text-xs text-gray-600 mt-3">
-                Your guest program has been deployed and is ready to generate proofs!
-              </p>
             </div>
           </div>
         </div>
@@ -276,32 +337,39 @@ export function LivePreview({ dsl, autoValidate = true }: LivePreviewProps) {
 
       {/* Code Preview */}
       {showCode && compiledCode && (
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="card">
-            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">
-                Generated Guest Program
-              </h3>
-              <button
-                onClick={() => setShowCode(false)}
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
-                Hide
-              </button>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-dark-800/50 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Zap className="w-4 h-4 text-warning-400" />
+              <h3 className="text-sm font-medium text-white">Generated Guest Program</h3>
+              <span className="badge badge-warning text-xs">Rust</span>
             </div>
-            <pre className="p-4 text-xs bg-gray-50 overflow-x-auto">
-              <code className="text-gray-800">{compiledCode}</code>
+            <button
+              onClick={() => setShowCode(false)}
+              className="text-xs text-dark-400 hover:text-white transition-colors"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto bg-dark-950 p-4">
+            <pre className="text-xs font-mono text-dark-200 whitespace-pre-wrap">
+              <code>{compiledCode}</code>
             </pre>
           </div>
         </div>
       )}
 
-      {!showCode && (
+      {!showCode && !deploymentResult?.success && (
         <div className="flex-1 flex items-center justify-center p-8 text-center">
           <div>
-            <Code2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">
-              Compile DSL to see generated code
+            <div className="w-16 h-16 rounded-2xl bg-dark-800/30 flex items-center justify-center mx-auto mb-4">
+              <Code2 className="w-8 h-8 text-dark-600" />
+            </div>
+            <p className="text-dark-500 text-sm">
+              Compile DSL to preview generated code
+            </p>
+            <p className="text-dark-600 text-xs mt-1">
+              or deploy directly to the gateway
             </p>
           </div>
         </div>

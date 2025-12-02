@@ -1,0 +1,105 @@
+// gRPC service definition for lightwalletd
+// Based on https://github.com/zcash/lightwalletd
+
+syntax = "proto3";
+package cash.z.wallet.sdk.rpc;
+
+option go_package = "walletrpc";
+
+import "compact_formats.proto";
+
+// Empty message for RPCs that take no arguments
+message Empty {}
+
+// BlockID contains block height and hash
+message BlockID {
+    uint64 height = 1;
+    bytes hash = 2;
+}
+
+// BlockRange specifies a range of blocks to fetch
+message BlockRange {
+    BlockID start = 1;
+    BlockID end = 2;
+}
+
+// LightdInfo contains server information
+message LightdInfo {
+    string version = 1;
+    string vendor = 2;
+    bool taddrSupport = 3;
+    string chainName = 4;
+    uint64 saplingActivationHeight = 5;
+    string consensusBranchId = 6;
+    uint64 blockHeight = 7;
+    string gitCommit = 8;
+    string branch = 9;
+    string buildDate = 10;
+    string buildUser = 11;
+    uint64 estimatedHeight = 12;
+    string zcashdBuild = 13;
+    string zcashdSubversion = 14;
+}
+
+// RawTransaction contains complete transaction data
+message RawTransaction {
+    bytes data = 1;
+    uint64 height = 2;
+}
+
+// SendResponse contains the result of SendTransaction
+message SendResponse {
+    int32 errorCode = 1;
+    string errorMessage = 2;
+}
+
+// TransparentAddressBlockFilter for filtering by address
+message TransparentAddressBlockFilter {
+    string address = 1;
+    BlockRange range = 2;
+}
+
+// TxFilter for getting specific transaction
+message TxFilter {
+    BlockID block = 1;
+    uint64 index = 2;
+    bytes hash = 3;
+}
+
+// The main gRPC service for light wallet clients
+service CompactTxStreamer {
+    // Returns the height of the latest block
+    rpc GetLatestBlock(ChainSpec) returns (BlockID) {}
+
+    // Returns a compact block at the specified height
+    rpc GetBlock(BlockID) returns (CompactBlock) {}
+
+    // Returns a range of compact blocks
+    rpc GetBlockRange(BlockRange) returns (stream CompactBlock) {}
+
+    // Returns information about the server
+    rpc GetLightdInfo(Empty) returns (LightdInfo) {}
+
+    // Returns a full transaction by hash
+    rpc GetTransaction(TxFilter) returns (RawTransaction) {}
+
+    // Sends a raw transaction
+    rpc SendTransaction(RawTransaction) returns (SendResponse) {}
+
+    // Simple ping to check liveness
+    rpc Ping(Duration) returns (PingResponse) {}
+}
+
+// ChainSpec specifies which chain to query
+message ChainSpec {}
+
+// Duration for ping
+message Duration {
+    int64 intervalUs = 1;
+}
+
+// PingResponse from server
+message PingResponse {
+    int64 entry = 1;
+    int64 exit = 2;
+}

@@ -95,6 +95,15 @@ static_resources:
                 allow_partial_message: false
               # Clear route cache to allow dynamic routing
               clear_route_cache: true
+              # Forward headers from auth response to upstream
+              allowed_upstream_headers:
+                patterns:
+                - exact: "x-payment-nullifier"
+              # Pass ZK-related headers to auth service
+              allowed_headers:
+                patterns:
+                - exact: "x-zk-receipt"
+                - exact: "x-zk-nullifier"
 
           # CORS filter
           - name: envoy.filters.http.cors

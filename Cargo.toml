@@ -8,6 +8,7 @@ members = [
     "crates/logic-compiler-api",
     "crates/image-id-registry",
     "crates/proof-generation-service",
+    "crates/build-service",
     "crates/zk-verification-service",
     "crates/zcash-backend",
 ]

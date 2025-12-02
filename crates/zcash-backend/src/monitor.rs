@@ -3,20 +3,21 @@
 //! Continuously polls the Zcash node for new blocks and processes payments.
 
 use anyhow::Result;
-use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use crate::config::Config;
+use crate::lightwalletd_client::{LightwalletdClient, ZcashNode};
 use crate::mock_node::MockNode;
 use crate::parser::Parser;
 use crate::storage::Storage;
 
 /// Blockchain monitor
 pub struct Monitor {
-    /// Mock Zcash node client
-    node: Arc<MockNode>,
+    /// Zcash node client (mock or lightwalletd)
+    node: Mutex<ZcashNode>,
 
     /// Transaction parser
     parser: Parser,
@@ -34,7 +35,20 @@ pub struct Monitor {
 impl Monitor {
     /// Create a new monitor
     pub async fn new(config: Config) -> Result<Self> {
-        let node = Arc::new(MockNode::new(config.payment_address.clone()));
+        // Create appropriate node based on config
+        let node = if config.mock_mode {
+            info!("Using mock Zcash node");
+            ZcashNode::Mock(MockNode::new(config.payment_address.clone()))
+        } else {
+            let url = config
+                .lightwalletd_url
+                .as_ref()
+                .expect("LIGHTWALLETD_URL required when not in mock mode");
+            info!("Connecting to lightwalletd at {}", url);
+            let client = LightwalletdClient::new(url).await?;
+            ZcashNode::Lightwalletd(client)
+        };
+
         let parser = Parser::new(config.payment_address.clone());
         let mut storage = Storage::new(&config.redis_url).await?;
 
@@ -50,7 +64,7 @@ impl Monitor {
         );
 
         Ok(Self {
-            node,
+            node: Mutex::new(node),
             parser,
             storage,
             config,
@@ -78,7 +92,10 @@ impl Monitor {
 
             // In mock mode, advance the chain to simulate new blocks
             if self.config.mock_mode {
-                self.node.advance_chain().await;
+                let mut node = self.node.lock().await;
+                if let ZcashNode::Mock(ref mock) = *node {
+                    mock.advance_chain().await;
+                }
             }
         }
     }
@@ -86,7 +103,10 @@ impl Monitor {
     /// Poll for new blocks once
     async fn poll_once(&mut self) -> Result<()> {
         // Get current blockchain height
-        let current_height = self.node.get_block_count().await?;
+        let current_height = {
+            let mut node = self.node.lock().await;
+            node.get_block_count().await?
+        };
 
         if current_height <= self.last_processed_height {
             info!(
@@ -109,6 +129,9 @@ impl Monitor {
 
         self.last_processed_height = current_height;
 
+        // Update the chain block height in Redis (for confirmation counting)
+        self.storage.set_block_height(current_height).await?;
+
         Ok(())
     }
 
@@ -117,11 +140,14 @@ impl Monitor {
         info!("Processing block {}", height);
 
         // Fetch block from node
-        let block = match self.node.get_block(height).await? {
-            Some(block) => block,
-            None => {
-                warn!("Block {} not found, skipping", height);
-                return Ok(());
+        let block = {
+            let mut node = self.node.lock().await;
+            match node.get_block(height).await? {
+                Some(block) => block,
+                None => {
+                    warn!("Block {} not found, skipping", height);
+                    return Ok(());
+                }
             }
         };
 
@@ -156,12 +182,6 @@ impl Monitor {
         }
 
         Ok(())
-    }
-
-    /// Get a reference to the mock node (for testing)
-    #[cfg(test)]
-    pub fn node(&self) -> Arc<MockNode> {
-        Arc::clone(&self.node)
     }
 }
 
