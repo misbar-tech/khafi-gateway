@@ -8,6 +8,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
 mod config;
+mod lightwalletd_client;
 mod mock_node;
 mod monitor;
 mod parser;

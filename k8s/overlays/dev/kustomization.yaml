@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: khafi-dev
+
+resources:
+  - ../../base
+
+namePrefix: dev-
+
+configMapGenerator:
+  - name: khafi-config
+    behavior: merge
+    literals:
+      - gateway_url=http://localhost:8080
+      - api_url=http://localhost:8082
+      - lightwalletd_url=https://testnet.lightwalletd.com:9067
+
+patches:
+  # Reduce replicas for dev environment
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  # Use local registry images
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  # Resource limits for dev (lower)
+  - target:
+      kind: Deployment
+      name: proof-generation-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 4Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 2000m
+  - target:
+      kind: Deployment
+      name: build-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 8Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 4000m

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: khafi
+  labels:
+    app.kubernetes.io/name: khafi
+    app.kubernetes.io/part-of: khafi-gateway

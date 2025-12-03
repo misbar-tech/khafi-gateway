@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: build-service
+  namespace: khafi
+  labels:
+    app: build-service
+    app.kubernetes.io/name: build-service
+    app.kubernetes.io/component: builder
+spec:
+  # Single replica recommended - builds are resource-intensive
+  replicas: 1
+  selector:
+    matchLabels:
+      app: build-service
+  template:
+    metadata:
+      labels:
+        app: build-service
+    spec:
+      containers:
+      - name: build-service
+        image: khafi/build-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8085
+          name: http
+        env:
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: BUILD_HOST
+          value: "0.0.0.0"
+        - name: BUILD_PORT
+          value: "8085"
+        - name: BUILD_DIR
+          value: "/app/builds"
+        - name: REGISTRY_URL
+          value: "http://image-id-registry:8083"
+        - name: GATEWAY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: khafi-config
+              key: gateway_url
+        - name: RUST_LOG
+          value: "info"
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+          limits:
+            memory: "16Gi"
+            cpu: "8000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8085
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8085
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        volumeMounts:
+        - name: build-workspace
+          mountPath: /app/builds
+      volumes:
+      - name: build-workspace
+        emptyDir:
+          sizeLimit: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: build-service
+  namespace: khafi
+  labels:
+    app: build-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8085
+    targetPort: 8085
+    name: http
+  selector:
+    app: build-service

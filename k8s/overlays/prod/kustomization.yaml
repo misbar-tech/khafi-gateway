@@ -1,0 +1,80 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: khafi
+
+resources:
+  - ../../base
+  - ../../traefik
+
+# Production-specific configurations
+configMapGenerator:
+  - name: khafi-config
+    behavior: merge
+    literals:
+      - gateway_url=https://khafi.misbar.tech
+      - api_url=https://api.khafi.misbar.tech
+      # Override with mainnet lightwalletd if needed
+      # - lightwalletd_url=https://mainnet.lightwalletd.com:9067
+
+# Increase replicas for production
+patches:
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: logic-compiler-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: image-id-registry
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: proof-generation-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: zk-verification-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: zcash-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+# Production image tags (override with actual versions)
+images:
+  - name: khafi/frontend
+    newTag: v1.0.0
+  - name: khafi/logic-compiler-api
+    newTag: v1.0.0
+  - name: khafi/image-id-registry
+    newTag: v1.0.0
+  - name: khafi/proof-generation-service
+    newTag: v1.0.0
+  - name: khafi/zk-verification-service
+    newTag: v1.0.0
+  - name: khafi/zcash-backend
+    newTag: v1.0.0
+  - name: khafi/build-service
+    newTag: v1.0.0

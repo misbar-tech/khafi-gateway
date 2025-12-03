@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: khafi-config
+  namespace: khafi
+  labels:
+    app.kubernetes.io/part-of: khafi-gateway
+data:
+  # Gateway URL - used by services to construct API endpoints
+  gateway_url: "https://khafi.misbar.tech"
+
+  # API URL for frontend
+  api_url: "https://api.khafi.misbar.tech"
+
+  # Lightwalletd URL for Zcash integration
+  # Default to testnet, override for mainnet
+  lightwalletd_url: "https://testnet.lightwalletd.com:9067"
+
+  # Optional: Image ID for verification service
+  # This should be set after deploying a guest program
+  # image_id: ""

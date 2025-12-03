@@ -1,0 +1,199 @@
+# Traefik IngressRoute for Khafi Gateway on GKE
+# Domain: khafi.misbar.tech
+
+---
+# Frontend routes
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: khafi-frontend
+  namespace: khafi
+  labels:
+    app.kubernetes.io/part-of: khafi-gateway
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`khafi.misbar.tech`)
+      kind: Rule
+      services:
+        - name: frontend
+          port: 80
+      middlewares:
+        - name: security-headers
+  tls:
+    certResolver: letsencrypt
+
+---
+# API routes
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: khafi-api
+  namespace: khafi
+  labels:
+    app.kubernetes.io/part-of: khafi-gateway
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Logic Compiler API
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/compile`)
+      kind: Rule
+      services:
+        - name: logic-compiler-api
+          port: 8082
+      middlewares:
+        - name: cors-headers
+        - name: api-ratelimit
+
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/deploy`)
+      kind: Rule
+      services:
+        - name: logic-compiler-api
+          port: 8082
+      middlewares:
+        - name: cors-headers
+        - name: api-ratelimit
+
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/validate`)
+      kind: Rule
+      services:
+        - name: logic-compiler-api
+          port: 8082
+      middlewares:
+        - name: cors-headers
+
+    # Build Service
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/build`)
+      kind: Rule
+      services:
+        - name: build-service
+          port: 8085
+      middlewares:
+        - name: cors-headers
+        - name: api-ratelimit
+
+    # Proof Generation Service
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/prove`)
+      kind: Rule
+      services:
+        - name: proof-generation-service
+          port: 8084
+      middlewares:
+        - name: cors-headers
+        - name: api-ratelimit
+
+    # Image ID Registry
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/registry`)
+      kind: Rule
+      services:
+        - name: image-id-registry
+          port: 8083
+      middlewares:
+        - name: cors-headers
+
+    # Zcash Backend
+    - match: Host(`api.khafi.misbar.tech`) && PathPrefix(`/api/payment`)
+      kind: Rule
+      services:
+        - name: zcash-backend
+          port: 8081
+      middlewares:
+        - name: cors-headers
+
+    # Health check endpoint
+    - match: Host(`api.khafi.misbar.tech`) && Path(`/health`)
+      kind: Rule
+      services:
+        - name: logic-compiler-api
+          port: 8082
+
+  tls:
+    certResolver: letsencrypt
+
+---
+# HTTP to HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: khafi-http-redirect
+  namespace: khafi
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`khafi.misbar.tech`) || Host(`api.khafi.misbar.tech`)
+      kind: Rule
+      middlewares:
+        - name: https-redirect
+      services:
+        - name: frontend
+          port: 80
+
+---
+# HTTPS Redirect Middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: https-redirect
+  namespace: khafi
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+
+---
+# Security Headers Middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: khafi
+spec:
+  headers:
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Powered-By: ""
+
+---
+# CORS Middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cors-headers
+  namespace: khafi
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Content-Type
+      - Authorization
+      - X-Customer-Id
+      - X-Proof
+    accessControlAllowOriginList:
+      - https://khafi.misbar.tech
+      - http://localhost:3000
+    accessControlMaxAge: 86400
+    addVaryHeader: true
+
+---
+# Rate Limiting Middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: api-ratelimit
+  namespace: khafi
+spec:
+  rateLimit:
+    average: 100
+    burst: 200
+    period: 1m

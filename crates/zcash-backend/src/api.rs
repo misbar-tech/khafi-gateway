@@ -65,7 +65,7 @@ pub fn create_router(storage: Storage) -> Router {
 
     Router::new()
         .route("/health", get(health_handler))
-        .route("/payment/:nullifier", get(get_payment_handler))
+        .route("/payment/{nullifier}", get(get_payment_handler))
         .route("/admin/payment", post(insert_payment_handler))
         .route("/stats", get(stats_handler))
         .layer(TraceLayer::new_for_http())

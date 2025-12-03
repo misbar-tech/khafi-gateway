@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proof-generation-service
+  namespace: khafi
+  labels:
+    app: proof-generation-service
+    app.kubernetes.io/name: proof-generation-service
+    app.kubernetes.io/component: prover
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: proof-generation-service
+  template:
+    metadata:
+      labels:
+        app: proof-generation-service
+    spec:
+      containers:
+      - name: proof-generation-service
+        image: khafi/proof-generation-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8084
+          name: http
+        env:
+        - name: REGISTRY_URL
+          value: "http://image-id-registry:8083"
+        - name: PROVER_HOST
+          value: "0.0.0.0"
+        - name: PROVER_PORT
+          value: "8084"
+        - name: RUST_LOG
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 15
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proof-generation-service
+  namespace: khafi
+  labels:
+    app: proof-generation-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8084
+    targetPort: 8084
+    name: http
+  selector:
+    app: proof-generation-service

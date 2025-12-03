@@ -1,0 +1,70 @@
+# Zcash Testnet Infrastructure
+# Runs zcashd + lightwalletd for local development and testing
+#
+# Usage:
+#   docker compose -f docker-compose.zcash.yaml up -d
+#   docker compose -f docker-compose.zcash.yaml logs -f zcashd
+#
+# Initial sync takes a few hours for testnet (~20GB disk space)
+
+services:
+  zcashd:
+    image: electriccoinco/zcashd:latest
+    platform: linux/amd64  # Required for Apple Silicon
+    container_name: zcashd-testnet
+    command:
+      - -testnet
+      - -rpcuser=zcash
+      - -rpcpassword=zcash123
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -experimentalfeatures
+      - -lightwalletd
+      - -txindex
+    ports:
+      - "18232:18232"  # Testnet RPC port
+    volumes:
+      - zcash-testnet-data:/root/.zcash
+    networks:
+      - zcash-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "zcash-cli", "-testnet", "-rpcuser=zcash", "-rpcpassword=zcash123", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  lightwalletd:
+    image: electriccoinco/lightwalletd:latest
+    platform: linux/amd64  # Required for Apple Silicon
+    container_name: lightwalletd-testnet
+    command:
+      - --grpc-bind-addr=0.0.0.0:9067
+      - --http-bind-addr=0.0.0.0:9068
+      - --zcash-conf-path=/etc/zcash/zcash.conf
+      - --log-file=/dev/stdout
+      - --log-level=4
+      - --no-tls-very-insecure
+    ports:
+      - "9067:9067"  # gRPC port
+      - "9068:9068"  # HTTP port (optional, for metrics)
+    volumes:
+      - ./config/zcash.conf:/etc/zcash/zcash.conf:ro
+      - lightwalletd-data:/var/lib/lightwalletd
+    networks:
+      - zcash-network
+    depends_on:
+      zcashd:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  zcash-testnet-data:
+    driver: local
+  lightwalletd-data:
+    driver: local
+
+networks:
+  zcash-network:
+    driver: bridge
