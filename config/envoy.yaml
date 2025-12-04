@@ -68,18 +68,6 @@ static_resources:
                   cluster: proof_generation_service
 
           http_filters:
-          # Rate limiting filter
-          - name: envoy.filters.http.ratelimit
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
-              domain: proof_api
-              stage: 0
-              rate_limit_service:
-                grpc_service:
-                  envoy_grpc:
-                    cluster_name: rate_limit_service
-                transport_api_version: V3
-
           # External authorization filter (ZK verification + payment)
           - name: envoy.filters.http.ext_authz
             typed_config:
@@ -198,23 +186,3 @@ static_resources:
                 address: zk-verification-service
                 port_value: 50051
 
-  # Rate Limit Service (optional, using Envoy's ratelimit service)
-  # You would deploy a separate ratelimit service or use a simple implementation
-  - name: rate_limit_service
-    type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
-    load_assignment:
-      cluster_name: rate_limit_service
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: ratelimit
-                port_value: 8081
-    # Note: If you don't have a rate limit service, comment out the rate limit filter above

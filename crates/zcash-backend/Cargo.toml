@@ -8,6 +8,11 @@ license.workspace = true
 khafi-common = { path = "../common" }
 tokio = { workspace = true, features = ["full"] }
 zcash_primitives.workspace = true
+zcash_client_backend.workspace = true
+zcash_address = "0.10"
+zcash_protocol = "0.7"
+zcash_note_encryption = "0.4"
+zcash_keys = "0.12"
 orchard.workspace = true
 redis = { workspace = true, features = ["tokio-comp", "connection-manager"] }
 tracing.workspace = true
@@ -20,6 +25,8 @@ tower-http = { version = "0.6", features = ["trace", "cors"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenv = "0.15"
+rand = "0.8"
+clap = { version = "4", features = ["derive"] }
 # gRPC for lightwalletd integration
 tonic.workspace = true
 tonic-prost.workspace = true
@@ -31,3 +38,7 @@ tonic-prost-build.workspace = true
 [[bin]]
 name = "zcash-backend"
 path = "src/main.rs"
+
+[[bin]]
+name = "zcash-keygen"
+path = "src/bin/keygen.rs"

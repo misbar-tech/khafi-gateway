@@ -27,8 +27,16 @@ pub struct Config {
     /// Example: "https://testnet.lightwalletd.com:9067"
     pub lightwalletd_url: Option<String>,
 
-    /// Khafi's Zcash payment address
+    /// Khafi's Zcash payment address (unified address)
     pub payment_address: String,
+
+    /// Orchard Full Viewing Key (hex encoded, 96 bytes)
+    /// Used to decrypt incoming Orchard notes
+    pub orchard_fvk: Option<String>,
+
+    /// Sapling Full Viewing Key (hex encoded)
+    /// Used to decrypt incoming Sapling notes
+    pub sapling_fvk: Option<String>,
 }
 
 impl Config {
@@ -62,6 +70,9 @@ impl Config {
 
             payment_address: env::var("PAYMENT_ADDRESS")
                 .unwrap_or_else(|_| "u1test_mock_address".to_string()),
+
+            orchard_fvk: env::var("ORCHARD_FVK").ok(),
+            sapling_fvk: env::var("SAPLING_FVK").ok(),
         };
 
         // Validate configuration
@@ -80,10 +91,13 @@ impl Config {
             anyhow::bail!("POLLING_INTERVAL_SECS must be greater than 0");
         }
 
-        // If not in mock mode, require lightwalletd configuration
+        // If not in mock mode, require lightwalletd and viewing key configuration
         if !self.mock_mode {
             if self.lightwalletd_url.is_none() {
                 anyhow::bail!("LIGHTWALLETD_URL is required when MOCK_MODE=false");
+            }
+            if self.orchard_fvk.is_none() && self.sapling_fvk.is_none() {
+                anyhow::bail!("ORCHARD_FVK or SAPLING_FVK is required when MOCK_MODE=false");
             }
         }
 

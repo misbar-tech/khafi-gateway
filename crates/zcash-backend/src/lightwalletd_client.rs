@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use tonic::transport::Channel;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::mock_node::{MockAction, MockBlock, MockTransaction};
 
@@ -80,6 +80,14 @@ impl LightwalletdClient {
     /// Returns the block converted to our MockBlock format for compatibility
     /// with the existing parser.
     pub async fn get_block(&mut self, height: u32) -> Result<Option<MockBlock>> {
+        let compact_block = self.get_compact_block(height).await?;
+        Ok(compact_block.map(|b| self.convert_compact_block(b)))
+    }
+
+    /// Get a raw compact block at the specified height
+    ///
+    /// Returns the raw CompactBlock for use with note decryption.
+    pub async fn get_compact_block(&mut self, height: u32) -> Result<Option<proto::CompactBlock>> {
         let block_id = BlockId {
             height: height as u64,
             hash: vec![],
@@ -95,16 +103,13 @@ impl LightwalletdClient {
             }
         };
 
-        // Convert CompactBlock to MockBlock format
-        let block = self.convert_compact_block(response);
-
         debug!(
-            "Lightwalletd: get_block({}) -> block with {} txs",
+            "Lightwalletd: get_compact_block({}) -> block with {} txs",
             height,
-            block.transactions.len()
+            response.vtx.len()
         );
 
-        Ok(Some(block))
+        Ok(Some(response))
     }
 
     /// Get a range of blocks (streaming)
@@ -212,6 +217,14 @@ impl ZcashNode {
         match self {
             ZcashNode::Mock(node) => node.get_block(height).await,
             ZcashNode::Lightwalletd(client) => client.get_block(height).await,
+        }
+    }
+
+    /// Get a raw compact block (only available for Lightwalletd)
+    pub async fn get_compact_block(&mut self, height: u32) -> Result<Option<proto::CompactBlock>> {
+        match self {
+            ZcashNode::Mock(_) => Ok(None), // Not available in mock mode
+            ZcashNode::Lightwalletd(client) => client.get_compact_block(height).await,
         }
     }
 }

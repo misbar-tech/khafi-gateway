@@ -6,11 +6,12 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::lightwalletd_client::{LightwalletdClient, ZcashNode};
 use crate::mock_node::MockNode;
+use crate::note_decryption::NoteDecryptor;
 use crate::parser::Parser;
 use crate::storage::Storage;
 
@@ -19,8 +20,11 @@ pub struct Monitor {
     /// Zcash node client (mock or lightwalletd)
     node: Mutex<ZcashNode>,
 
-    /// Transaction parser
+    /// Transaction parser (for mock mode)
     parser: Parser,
+
+    /// Note decryptor for real blocks (when not in mock mode)
+    note_decryptor: Option<NoteDecryptor>,
 
     /// Storage client
     storage: Storage,
@@ -50,6 +54,24 @@ impl Monitor {
         };
 
         let parser = Parser::new(config.payment_address.clone());
+
+        // Create note decryptor for real mode
+        let note_decryptor = if !config.mock_mode {
+            let decryptor = NoteDecryptor::new(
+                config.orchard_fvk.as_deref(),
+                config.sapling_fvk.as_deref(),
+            )?;
+            if decryptor.has_viewing_keys() {
+                info!("Note decryptor initialized with viewing keys");
+                Some(decryptor)
+            } else {
+                warn!("No viewing keys configured, note decryption disabled");
+                None
+            }
+        } else {
+            None
+        };
+
         let mut storage = Storage::new(&config.redis_url).await?;
 
         // Get the latest block height from storage, or start from current chain height
@@ -66,6 +88,7 @@ impl Monitor {
         Ok(Self {
             node: Mutex::new(node),
             parser,
+            note_decryptor,
             storage,
             config,
             last_processed_height,
@@ -92,7 +115,7 @@ impl Monitor {
 
             // In mock mode, advance the chain to simulate new blocks
             if self.config.mock_mode {
-                let mut node = self.node.lock().await;
+                let node = self.node.lock().await;
                 if let ZcashNode::Mock(ref mock) = *node {
                     mock.advance_chain().await;
                 }
@@ -137,25 +160,45 @@ impl Monitor {
 
     /// Process a single block
     async fn process_block(&mut self, height: u32) -> Result<()> {
-        info!("Processing block {}", height);
+        debug!("Processing block {}", height);
 
-        // Fetch block from node
-        let block = {
-            let mut node = self.node.lock().await;
-            match node.get_block(height).await? {
-                Some(block) => block,
-                None => {
-                    warn!("Block {} not found, skipping", height);
-                    return Ok(());
+        // Get payments - either from mock parser or real note decryption
+        let payments = if self.config.mock_mode {
+            // Mock mode: use the mock parser
+            let block = {
+                let mut node = self.node.lock().await;
+                match node.get_block(height).await? {
+                    Some(block) => block,
+                    None => {
+                        warn!("Block {} not found, skipping", height);
+                        return Ok(());
+                    }
                 }
+            };
+            self.parser.parse_block(&block)?
+        } else {
+            // Real mode: use note decryption on compact blocks
+            if let Some(ref decryptor) = self.note_decryptor {
+                let compact_block = {
+                    let mut node = self.node.lock().await;
+                    match node.get_compact_block(height).await? {
+                        Some(block) => block,
+                        None => {
+                            warn!("Compact block {} not found, skipping", height);
+                            return Ok(());
+                        }
+                    }
+                };
+                decryptor.decrypt_block(&compact_block)?
+            } else {
+                // No viewing keys configured, can't decrypt
+                debug!("Skipping block {} - no viewing keys configured", height);
+                return Ok(());
             }
         };
 
-        // Parse block to extract payments
-        let payments = self.parser.parse_block(&block)?;
-
         if payments.is_empty() {
-            info!("No payments found in block {}", height);
+            debug!("No payments found in block {}", height);
             return Ok(());
         }
 

@@ -11,6 +11,7 @@ mod config;
 mod lightwalletd_client;
 mod mock_node;
 mod monitor;
+mod note_decryption;
 mod parser;
 mod storage;
 
